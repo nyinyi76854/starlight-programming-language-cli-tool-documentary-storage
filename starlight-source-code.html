@@ -1,0 +1,4437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Starlight Source Code</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Consolas, monospace;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+
+    header {
+      background: #020617;
+      padding: 20px;
+      text-align: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: #38bdf8;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .container {
+      padding: 20px;
+    }
+
+    .file {
+      margin-bottom: 30px;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #020617;
+    }
+
+    .file-header {
+      background: #020617;
+      padding: 10px 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1e293b;
+      font-weight: bold;
+      color: #7dd3fc;
+    }
+
+    .file-header button {
+      background: #38bdf8;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .file-header button:hover {
+      background: #0ea5e9;
+    }
+
+    pre {
+      margin: 0;
+      padding: 15px;
+      overflow-x: auto;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #e2e8f0;
+    }
+
+    code {
+      white-space: pre;
+    }
+
+    .placeholder {
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+<header> Starlight Language Source Code</header>
+
+<div class="container">
+ 
+  <div class="file">
+    <div class="file-header">
+      lexer.js
+      <button onclick="copyCode('lexer')">Copy</button>
+    </div>
+    <pre><code id="lexer" class="placeholder">
+class LexerError extends Error {
+  constructor(message, line, column, source = '') {
+    let output = `SyntaxError: ${message}\n`;
+    output += `  at line ${line}, column ${column}\n`;
+
+    if (source && line != null) {
+      const lines = source.split('\n');
+      const srcLine = lines[line - 1] || '';
+      output += `    ${srcLine}\n`;
+      output += `    ${' '.repeat(column - 1)}^\n`;
+    }
+
+    super(output);
+    this.name = 'SyntaxError';
+  }
+}
+
+class Lexer {
+  constructor(input) {
+  this.input = input;
+  this.source = input;
+  this.pos = 0;
+  this.currentChar = input[0] || null;
+  this.line = 1;
+  this.column = 1;
+  this.keywords = [
+      'let', 'sldeploy', 'if', 'else', 'while', 'for',
+      'break', 'continue', 'func', 'return',
+      'true', 'false', 'null',
+      'ask', 'define', 'import', 'from', 'as',
+      'async', 'await', 'new', 'in', 'do', 'track', 'start', 'race', 'not', 'and', 'or'
+    ];
+}
+
+
+  advance() {
+    if (this.currentChar === '\n') {
+      this.line++;
+      this.column = 0;
+    } else {
+      this.column++;
+    }
+    this.pos++;
+    this.currentChar = this.pos < this.input.length ? this.input[this.pos] : null;
+  }
+
+  peek() {
+    return this.pos + 1 < this.input.length ? this.input[this.pos + 1] : null;
+  }
+
+  error(msg) {
+  throw new LexerError(
+    msg,
+    this.line,
+    this.column,
+    this.source
+  );
+}
+
+
+  skipWhitespace() {
+    while (this.currentChar && /\s/.test(this.currentChar)) this.advance();
+  }
+
+  skipComment() {
+    if (this.currentChar === '#') {
+      if (this.peek() === '*') {
+        this.advance(); this.advance(); // skip #*
+        while (this.currentChar !== null) {
+          if (this.currentChar === '*' && this.peek() === '#') {
+            this.advance(); this.advance();
+            return;
+          }
+          this.advance();
+        }
+        this.error("Unterminated multi-line comment (#* ... *#)");
+      } else {
+        while (this.currentChar && this.currentChar !== '\n') this.advance();
+      }
+    }
+  }
+
+  number() {
+    const startLine = this.line;
+    const startCol = this.column;
+    let result = '';
+    while (this.currentChar && /[0-9]/.test(this.currentChar)) {
+      result += this.currentChar;
+      this.advance();
+    }
+
+    if (this.currentChar === '.' && /[0-9]/.test(this.peek())) {
+      result += '.'; this.advance();
+      while (this.currentChar && /[0-9]/.test(this.currentChar)) {
+        result += this.currentChar;
+        this.advance();
+      }
+      return { type: 'NUMBER', value: parseFloat(result), line: startLine, column: startCol };
+    }
+
+    return { type: 'NUMBER', value: parseInt(result), line: startLine, column: startCol };
+  }
+
+  identifier() {
+    const startLine = this.line;
+    const startCol = this.column;
+    let result = '';
+    while (this.currentChar && /[A-Za-z0-9_]/.test(this.currentChar)) {
+      result += this.currentChar;
+      this.advance();
+    }
+
+if (this.keywords.includes(result)) {
+  if (result === 'and') return { type: 'AND', value: 'and', line: startLine, column: startCol };
+  if (result === 'or')  return { type: 'OR', value: 'or', line: startLine, column: startCol };
+  return { type: result.toUpperCase(), value: result, line: startLine, column: startCol };
+}
+
+return { type: 'IDENTIFIER', value: result, line: startLine, column: startCol };
+
+
+  }
+
+  string() {
+    const startLine = this.line;
+    const startCol = this.column;
+    const quote = this.currentChar;
+    this.advance();
+    let result = '';
+
+    while (this.currentChar && this.currentChar !== quote) {
+      if (this.currentChar === '\\') {
+        this.advance();
+        switch (this.currentChar) {
+          case 'n': result += '\n'; break;
+          case 't': result += '\t'; break;
+          case '"': result += '"'; break;
+          case "'": result += "'"; break;
+          case '\\': result += '\\'; break;
+          default: result += this.currentChar;
+        }
+      } else {
+        result += this.currentChar;
+      }
+      this.advance();
+    }
+
+    if (this.currentChar !== quote) {
+      this.error('Unterminated string literal');
+    }
+
+    this.advance();
+    return { type: 'STRING', value: result, line: startLine, column: startCol };
+  }
+
+  getTokens() {
+    const tokens = [];
+
+    while (this.currentChar !== null) {
+      if (/\s/.test(this.currentChar)) { this.skipWhitespace(); continue; }
+      if (this.currentChar === '#') { this.skipComment(); continue; }
+      if (/[0-9]/.test(this.currentChar)) { tokens.push(this.number()); continue; }
+      if (/[A-Za-z_]/.test(this.currentChar)) { tokens.push(this.identifier()); continue; }
+      if (this.currentChar === '"' || this.currentChar === "'") { tokens.push(this.string()); continue; }
+
+      const char = this.currentChar;
+      const next = this.peek();
+      const startLine = this.line;
+      const startCol = this.column;
+
+      if (char === '=' && next === '=') { tokens.push({ type: 'EQEQ', line: startLine, column: startCol }); this.advance(); this.advance(); continue; }
+    
+if (char === '=' && next === '>') {
+  tokens.push({ type: 'ARROW', line: startLine, column: startCol });
+  this.advance(); this.advance();
+  continue;
+}
+
+if (char === '-' && next === '>') {
+  tokens.push({ type: 'ARROW', line: startLine, column: startCol });
+  this.advance(); this.advance();
+  continue;
+}
+if (char === '?' && next === '?') {
+    tokens.push({ type: 'NULLISH_COALESCING', value: '??', line: startLine, column: startCol });
+    this.advance(); 
+    this.advance(); 
+    continue;
+}
+
+if (char === '?') {
+    tokens.push({ type: 'QUESTION', value: '?', line: startLine, column: startCol });
+    this.advance();
+    continue;
+}
+
+      if (char === '!' && next === '=') { tokens.push({ type: 'NOTEQ', line: startLine, column: startCol }); this.advance(); this.advance(); continue; }
+      if (char === '<' && next === '=') { tokens.push({ type: 'LTE', line: startLine, column: startCol }); this.advance(); this.advance(); continue; }
+      if (char === '>' && next === '=') { tokens.push({ type: 'GTE', line: startLine, column: startCol }); this.advance(); this.advance(); continue; }
+      if (char === '&' && next === '&') { tokens.push({ type: 'AND', line: startLine, column: startCol }); this.advance(); this.advance(); continue; }
+      if (char === '|' && next === '|') { tokens.push({ type: 'OR', line: startLine, column: startCol }); this.advance(); this.advance(); continue; }
+      if (char === '+' && next === '+') { tokens.push({ type: 'PLUSPLUS', line: startLine, column: startCol }); this.advance(); this.advance(); continue; }
+      if (char === '-' && next === '-') { tokens.push({ type: 'MINUSMINUS', line: startLine, column: startCol }); this.advance(); this.advance(); continue; }
+
+      const map = { '+': 'PLUSEQ', '-': 'MINUSEQ', '*': 'STAREQ', '/': 'SLASHEQ', '%': 'MODEQ' };
+      if (next === '=' && map[char]) { tokens.push({ type: map[char], line: startLine, column: startCol }); this.advance(); this.advance(); continue; }
+
+      const singles = {
+        '+': 'PLUS', '-': 'MINUS', '*': 'STAR', '/': 'SLASH', '%': 'MOD',
+        '=': 'EQUAL', '<': 'LT', '>': 'GT', '!': 'NOT',
+        '(': 'LPAREN', ')': 'RPAREN', '{': 'LBRACE', '}': 'RBRACE',
+        ';': 'SEMICOLON', ',': 'COMMA', '[': 'LBRACKET', ']': 'RBRACKET',
+        ':': 'COLON', '.': 'DOT'
+      };
+
+      if (singles[char]) { tokens.push({ type: singles[char], line: startLine, column: startCol }); this.advance(); continue; }
+
+      this.error("Unexpected character: " + char);
+    }
+
+    tokens.push({ type: 'EOF', line: this.line, column: this.column });
+    return tokens;
+  }
+}
+
+module.exports = Lexer;  
+    </code></pre>
+  </div>
+
+  <div class="file">
+    <div class="file-header">
+      parser.js
+      <button onclick="copyCode('parser')">Copy</button>
+    </div>
+    <pre><code id="parser" class="placeholder">
+const COLOR = {
+  reset: '\x1b[0m',
+  red: '\x1b[31m',
+  yellow: '\x1b[33m',
+  white: '\x1b[37m'
+};
+
+class ParseError extends Error {
+  constructor(message, token, source, suggestion = null) {
+    const line = token?.line ?? '?';
+    const column = token?.column ?? '?';
+
+    let output = `${COLOR.red}${message}${COLOR.reset}\n`;
+
+    if (suggestion) {
+      output += `${COLOR.yellow}${suggestion}${COLOR.reset}\n`;
+    }
+
+    if (source && token?.line != null) {
+      const lines = source.split('\n');
+      const srcLine = lines[token.line - 1] || '';
+
+      output += `${COLOR.white}  at line ${line}, column ${column}\n`;
+      const caretPos =
+  typeof column === 'number' && column > 0
+    ? column - 1
+    : 0;
+
+output += `    ${srcLine}\n`;
+output += `    ${' '.repeat(caretPos)}^\n${COLOR.reset}`;
+
+    } else {
+      output += `${COLOR.white}  at line ${line}, column ${column}\n${COLOR.reset}`;
+    }
+
+    super(output);
+    this.name = 'SyntaxError';
+  }
+}
+
+class Parser {
+  constructor(tokens, source = '') {
+  this.tokens = tokens;
+  this.source = source;
+  this.pos = 0;
+  this.current = this.tokens[this.pos];
+}
+
+
+  advance() {
+    this.pos++;
+    this.current = this.pos < this.tokens.length ? this.tokens[this.pos] : { type: 'EOF' };
+  }
+
+ eat(type) {
+  if (this.current.type === type) {
+    this.advance();
+  } else {
+    throw new ParseError(
+      `Expected '${type}' but got '${this.current.type}'`,
+      this.current,
+      this.source
+    );
+  }
+}
+
+
+  peekType(offset = 1) {
+    return (this.tokens[this.pos + offset] || { type: 'EOF' }).type;
+  }
+
+  parse() {
+    const body = [];
+    while (this.current.type !== 'EOF') {
+      body.push(this.statement());
+    }
+    return { type: 'Program', body };
+  }
+
+  statement() {
+    if (this.current.type === 'ASYNC' && this.peekType() === 'FUNC') {
+    this.eat('ASYNC');
+    this.eat('FUNC');
+    return this.asyncFuncDeclaration();
+  }
+    switch (this.current.type) {
+      case 'LET': return this.varDeclaration();
+      case 'SLDEPLOY': return this.sldeployStatement();
+      case 'DEFINE': return this.defineStatement();
+      case 'IF': return this.ifStatement();
+      case 'WHILE': return this.whileStatement();
+      case 'FOR': return this.forStatement();
+      case 'DO': return this.doTrackStatement();
+      case 'START': return this.startStatement();
+      case 'BREAK': return this.breakStatement();
+      case 'CONTINUE': return this.continueStatement();
+      case 'FUNC': return this.funcDeclaration();
+      case 'RETURN': return this.returnStatement();
+      case 'IMPORT': return this.importStatement();
+      case 'LBRACE': return this.block();
+      default:
+        return this.expressionStatement();
+    }
+  }
+varDeclaration() {
+  const t = this.current; 
+  this.eat('LET');
+
+  if (this.current.type !== 'IDENTIFIER') {
+    throw new ParseError(
+      "Expected variable name after 'let'",
+      this.current,
+      this.source,
+      "Variable declarations must be followed by an identifier, e.g. let x = 5"
+    );
+  }
+
+  const idToken = this.current; 
+  const id = idToken.value;
+  this.eat('IDENTIFIER');
+
+  let expr = null;
+
+  if (this.current.type === 'EQEQ') {
+    throw new ParseError(
+      "Invalid '==' in variable declaration",
+      this.current,
+      this.source,
+      "Did you mean '=' for assignment?"
+    );
+  }
+
+  if (this.current.type === 'EQUAL') {
+    this.eat('EQUAL');
+
+    if (this.current.type === 'SEMICOLON') {
+      throw new ParseError(
+        "Expected expression after '='",
+        this.current,
+        this.source,
+        "Assignments require a value, e.g. let x = 10"
+      );
+    }
+
+    expr = this.expression();
+  }
+
+  if (this.current.type === 'SEMICOLON') {
+    this.eat('SEMICOLON');
+  }
+
+  return { 
+    type: 'VarDeclaration', 
+    id, 
+    expr, 
+    line: t.line, 
+    column: t.column 
+  };
+}
+
+startStatement() {
+  const t = this.current; 
+  this.eat('START');
+
+  if (this.current.type === 'LBRACE') {
+    throw new ParseError(
+      "Expected expression after 'start'",
+      this.current,
+      this.source,
+      "The 'start' statement requires a discriminant expression"
+    );
+  }
+
+  const discriminant = this.expression();
+
+  if (this.current.type !== 'LBRACE') {
+    throw new ParseError(
+      "Expected '{' to start start-block",
+      this.current,
+      this.source,
+      "Start blocks must be enclosed in braces"
+    );
+  }
+
+  this.eat('LBRACE');
+
+  const cases = [];
+
+  while (this.current.type === 'RACE') {
+    cases.push(this.raceClause());
+  }
+
+  if (cases.length === 0) {
+    throw new ParseError(
+      "Start statement must contain at least one 'race' clause",
+      this.current,
+      this.source,
+      "Use 'race <condition> { ... }' inside start blocks"
+    );
+  }
+
+  if (this.current.type !== 'RBRACE') {
+    throw new ParseError(
+      "Expected '}' to close start block",
+      this.current,
+      this.source,
+      "Did you forget to close the start block?"
+    );
+  }
+
+  this.eat('RBRACE');
+
+  return {
+    type: 'StartStatement',
+    discriminant,
+    cases,
+    line: t.line,
+    column: t.column
+  };
+}
+raceClause() {
+  const t = this.current; 
+  this.eat('RACE');
+
+  if (this.current.type === 'LBRACE') {
+    throw new ParseError(
+      "Expected condition after 'race'",
+      this.current,
+      this.source,
+      "Race clauses require a condition before the block"
+    );
+  }
+
+  const test = this.expression();
+
+  if (this.current.type !== 'LBRACE') {
+    throw new ParseError(
+      "Expected '{' after race condition",
+      this.current,
+      this.source,
+      "Race clauses must use a block: race condition { ... }"
+    );
+  }
+
+  const consequent = this.block();
+
+  return {
+    type: 'RaceClause',
+    test,
+    consequent,
+    line: t.line,
+    column: t.column
+  };
+}
+
+
+sldeployStatement() {
+  const t = this.current; 
+  this.eat('SLDEPLOY');
+
+  if (this.current.type === 'SEMICOLON') {
+    throw new ParseError(
+      "Expected expression after 'sldeploy'",
+      this.current,
+      this.source,
+      "sldeploy requires a value or expression to deploy"
+    );
+  }
+
+  const expr = this.expression();
+
+  if (this.current.type === 'SEMICOLON') {
+    this.eat('SEMICOLON');
+  }
+
+  return { 
+    type: 'SldeployStatement', 
+    expr, 
+    line: t.line, 
+    column: t.column 
+  };
+}
+
+doTrackStatement() {
+  const t = this.current;
+  this.eat('DO');
+
+  if (this.current.type !== 'LBRACE') {
+    throw new ParseError(
+      "Expected '{' after 'do'",
+      this.current,
+      this.source,
+      "The 'do' statement must be followed by a block"
+    );
+  }
+
+  const body = this.block();
+
+  let handler = null;
+
+  if (this.current.type === 'TRACK') {
+    this.eat('TRACK');
+
+    if (this.current.type !== 'LBRACE') {
+      throw new ParseError(
+        "Expected '{' after 'track'",
+        this.current,
+        this.source,
+        "Track handlers must be blocks"
+      );
+    }
+
+    handler = this.block();
+  }
+
+  return {
+    type: 'DoTrackStatement',
+    body,
+    handler,
+    line: t.line,
+    column: t.column
+  };
+}
+
+defineStatement() {
+  const t = this.current; 
+  this.eat('DEFINE');
+
+  if (this.current.type !== 'IDENTIFIER') {
+    throw new ParseError(
+      "Expected identifier after 'define'",
+      this.current,
+      this.source,
+      "Definitions must be followed by a name, e.g. define PI = 3.14"
+    );
+  }
+
+  const idToken = this.current; 
+  const id = idToken.value;
+  this.eat('IDENTIFIER');
+
+  let expr = null;
+
+  if (this.current.type === 'EQEQ') {
+    throw new ParseError(
+      "Invalid '==' in define statement",
+      this.current,
+      this.source,
+      "Did you mean '=' to assign a value?"
+    );
+  }
+
+  if (this.current.type === 'EQUAL') {
+    this.eat('EQUAL');
+
+    if (this.current.type === 'SEMICOLON') {
+      throw new ParseError(
+        "Expected expression after '='",
+        this.current,
+        this.source,
+        "Definitions require a value, e.g. define X = 10"
+      );
+    }
+
+    expr = this.expression();
+  }
+
+  if (this.current.type === 'SEMICOLON') {
+    this.eat('SEMICOLON');
+  }
+
+  return { 
+    type: 'DefineStatement', 
+    id, 
+    expr, 
+    line: t.line, 
+    column: t.column 
+  };
+}
+
+asyncFuncDeclaration() {
+  const t = this.current;
+
+  if (this.current.type !== 'IDENTIFIER') {
+    throw new ParseError(
+      "Expected function name after 'async func'",
+      this.current,
+      this.source,
+      "Async functions must have a name"
+    );
+  }
+
+  const name = this.current.value;
+  this.eat('IDENTIFIER');
+
+  let params = [];
+
+  if (this.current.type === 'LPAREN') {
+    this.eat('LPAREN');
+
+    if (this.current.type !== 'RPAREN') {
+      if (this.current.type !== 'IDENTIFIER') {
+        throw new ParseError(
+          "Expected parameter name",
+          this.current,
+          this.source,
+          "Function parameters must be identifiers"
+        );
+      }
+
+      params.push(this.current.value);
+      this.eat('IDENTIFIER');
+
+      while (this.current.type === 'COMMA') {
+        this.eat('COMMA');
+
+        if (this.current.type !== 'IDENTIFIER') {
+          throw new ParseError(
+            "Expected parameter name after ','",
+            this.current,
+            this.source,
+            "Separate parameters with commas"
+          );
+        }
+
+        params.push(this.current.value);
+        this.eat('IDENTIFIER');
+      }
+    }
+
+    if (this.current.type !== 'RPAREN') {
+      throw new ParseError(
+        "Expected ')' after function parameters",
+        this.current,
+        this.source,
+        "Did you forget to close the parameter list?"
+      );
+    }
+
+    this.eat('RPAREN');
+  } else if (this.current.type === 'IDENTIFIER') {
+    params.push(this.current.value);
+    this.eat('IDENTIFIER');
+  }
+
+  if (this.current.type !== 'LBRACE') {
+    throw new ParseError(
+      "Expected '{' to start function body",
+      this.current,
+      this.source,
+      "Function declarations require a block body"
+    );
+  }
+
+  const body = this.block();
+
+  return { 
+    type: 'FunctionDeclaration', 
+    name, 
+    params, 
+    body, 
+    async: true,
+    line: t.line,
+    column: t.column
+  };
+}
+ifStatement() {
+  const t = this.current;
+  this.eat('IF');
+
+  let test;
+
+  if (this.current.type === 'LPAREN') {
+    this.eat('LPAREN');
+
+    if (this.current.type === 'RPAREN') {
+      throw new ParseError(
+        "Missing condition in if statement",
+        this.current,
+        this.source,
+        "If statements require a condition"
+      );
+    }
+
+    test = this.expression();
+
+    if (this.current.type !== 'RPAREN') {
+      throw new ParseError(
+        "Expected ')' after if condition",
+        this.current,
+        this.source,
+        "Did you forget to close the condition?"
+      );
+    }
+
+    this.eat('RPAREN');
+  } else {
+    test = this.expression();
+  }
+
+  if (this.current.type === 'EQUAL') {
+    throw new ParseError(
+      "Invalid assignment in if condition",
+      this.current,
+      this.source,
+      "Did you mean '==' for comparison?"
+    );
+  }
+
+  const consequent = this.statementOrBlock();
+
+  let alternate = null;
+
+  if (this.current.type === 'ELSE') {
+    this.eat('ELSE');
+
+    if (this.current.type === 'IF') {
+      alternate = this.ifStatement();
+    } else {
+      alternate = this.statementOrBlock();
+    }
+  }
+
+  return { 
+    type: 'IfStatement', 
+    test, 
+    consequent, 
+    alternate, 
+    line: t.line, 
+    column: t.column 
+  };
+}
+
+parseExpressionOnly() {
+  return this.expression();
+}
+
+whileStatement() {
+  const t = this.current; 
+  this.eat('WHILE');
+
+  let test;
+
+  if (this.current.type === 'LPAREN') {
+    this.eat('LPAREN');
+
+    if (this.current.type === 'RPAREN') {
+      throw new ParseError(
+        "Missing condition in while statement",
+        this.current,
+        this.source,
+        "While loops require a condition"
+      );
+    }
+
+    test = this.expression();
+
+    if (this.current.type !== 'RPAREN') {
+      throw new ParseError(
+        "Expected ')' after while condition",
+        this.current,
+        this.source,
+        "Did you forget to close the condition?"
+      );
+    }
+
+    this.eat('RPAREN');
+  } 
+  else {
+    const exprTokens = [];
+    let braceFound = false;
+    let depth = 0;
+
+    while (this.current.type !== 'EOF') {
+      if (this.current.type === 'LBRACE' && depth === 0) {
+        braceFound = true;
+        break;
+      }
+      if (this.current.type === 'LPAREN') depth++;
+      if (this.current.type === 'RPAREN') depth--;
+      exprTokens.push(this.current);
+      this.advance();
+    }
+
+    if (!braceFound) {
+      throw new ParseError(
+        "Expected '{' after while condition",
+        this.current,
+        this.source,
+        "While loops must be followed by a block"
+      );
+    }
+
+    const Parser = require('./parser'); 
+    const exprParser = new Parser(exprTokens, this.source);
+    test = exprParser.parseExpressionOnly(); 
+  }
+
+  if (this.current.type !== 'LBRACE') {
+    throw new ParseError(
+      "Expected '{' to start while loop body",
+      this.current,
+      this.source,
+      "While loop bodies must be enclosed in braces"
+    );
+  }
+
+  const body = this.block();
+
+  return { 
+    type: 'WhileStatement', 
+    test, 
+    body, 
+    line: t.line, 
+    column: t.column 
+  };
+}
+
+importStatement() {
+  const t = this.current; 
+  this.eat('IMPORT');
+
+  let specifiers = [];
+
+  if (this.current.type === 'STAR') {
+    this.eat('STAR');
+
+    if (this.current.type !== 'AS') {
+      throw new ParseError(
+        "Expected 'as' after '*' in import",
+        this.current,
+        this.source,
+        "Namespace imports require 'as', e.g. import * as name from 'mod'"
+      );
+    }
+
+    this.eat('AS');
+
+    if (this.current.type !== 'IDENTIFIER') {
+      throw new ParseError(
+        "Expected identifier after 'as'",
+        this.current,
+        this.source,
+        "The namespace must have a local name"
+      );
+    }
+
+    const name = this.current.value;
+    this.eat('IDENTIFIER');
+
+    specifiers.push({
+      type: 'NamespaceImport',
+      local: name,
+      line: t.line,
+      column: t.column
+    });
+
+  } else if (this.current.type === 'LBRACE') {
+    this.eat('LBRACE');
+
+    if (this.current.type === 'RBRACE') {
+      throw new ParseError(
+        "Empty import specifier list",
+        this.current,
+        this.source,
+        "Specify at least one name inside '{ }'"
+      );
+    }
+
+    while (this.current.type !== 'RBRACE') {
+      if (this.current.type !== 'IDENTIFIER') {
+        throw new ParseError(
+          "Expected identifier in import specifier",
+          this.current,
+          this.source,
+          "Import names must be identifiers"
+        );
+      }
+
+      const importedName = this.current.value;
+      const importedLine = this.current.line;
+      const importedColumn = this.current.column;
+      this.eat('IDENTIFIER');
+
+      let localName = importedName;
+      if (this.current.type === 'AS') {
+        this.eat('AS');
+
+        if (this.current.type !== 'IDENTIFIER') {
+          throw new ParseError(
+            "Expected identifier after 'as'",
+            this.current,
+            this.source,
+            "Aliases must be valid identifiers"
+          );
+        }
+
+        localName = this.current.value;
+        this.eat('IDENTIFIER');
+      }
+
+      specifiers.push({
+        type: 'NamedImport',
+        imported: importedName,
+        local: localName,
+        line: importedLine,
+        column: importedColumn
+      });
+
+      if (this.current.type === 'COMMA') this.eat('COMMA');
+    }
+
+    this.eat('RBRACE');
+
+  } else if (this.current.type === 'IDENTIFIER') {
+    const localName = this.current.value;
+    const localLine = this.current.line;
+    const localColumn = this.current.column;
+    this.eat('IDENTIFIER');
+
+    specifiers.push({
+      type: 'DefaultImport',
+      local: localName,
+      line: localLine,
+      column: localColumn
+    });
+
+  } else {
+    throw new ParseError(
+      "Invalid import syntax",
+      this.current,
+      this.source,
+      "Use import name, import { a }, or import * as name"
+    );
+  }
+
+  if (this.current.type !== 'FROM') {
+    throw new ParseError(
+      "Expected 'from' in import statement",
+      this.current,
+      this.source,
+      "Imports must specify a source module"
+    );
+  }
+
+  this.eat('FROM');
+
+  const pathToken = this.current;
+
+  if (pathToken.type !== 'STRING') {
+    throw new ParseError(
+      "Expected string after 'from'",
+      pathToken,
+      this.source,
+      "Module paths must be strings"
+    );
+  }
+
+  this.eat('STRING');
+
+  if (this.current.type === 'SEMICOLON') this.eat('SEMICOLON');
+
+  return { 
+    type: 'ImportStatement', 
+    path: pathToken.value, 
+    specifiers, 
+    line: t.line, 
+    column: t.column 
+  };
+}
+forStatement() {
+  const t = this.current;
+  this.eat('FOR');
+
+  if (
+    (this.current.type === 'LET' && this.peekType() === 'IDENTIFIER' && this.peekType(2) === 'IN') ||
+    (this.current.type === 'IDENTIFIER' && this.peekType() === 'IN')
+  ) {
+    let variable;
+    let variableLine, variableColumn;
+    let iterable;
+    let letKeyword = false;
+
+    if (this.current.type === 'LET') {
+      letKeyword = true;
+      this.eat('LET');
+    }
+
+    if (this.current.type !== 'IDENTIFIER') {
+      throw new ParseError(
+        "Expected identifier in for-in loop",
+        this.current,
+        this.source,
+        "for-in loops require a loop variable"
+      );
+    }
+
+    variableLine = this.current.line;
+    variableColumn = this.current.column;
+    variable = this.current.value;
+    this.eat('IDENTIFIER');
+
+    if (this.current.type !== 'IN') {
+      throw new ParseError(
+        "Expected 'in' in for-in loop",
+        this.current,
+        this.source,
+        "Use: for item in iterable { ... }"
+      );
+    }
+
+    this.eat('IN');
+    iterable = this.expression();
+
+    if (this.current.type !== 'LBRACE') {
+      throw new ParseError(
+        "Expected '{' after for-in iterable",
+        this.current,
+        this.source,
+        "For-in loops require a block body"
+      );
+    }
+
+    const body = this.block();
+
+    return { 
+      type: 'ForInStatement', 
+      variable, 
+      variableLine, 
+      variableColumn,
+      iterable, 
+      letKeyword, 
+      body,
+      line: t.line,
+      column: t.column
+    };
+  }
+
+  let init = null;
+  let test = null;
+  let update = null;
+
+  if (this.current.type === 'LPAREN') {
+    this.eat('LPAREN');
+
+    if (this.current.type !== 'SEMICOLON') {
+      init = this.current.type === 'LET'
+        ? this.varDeclaration()
+        : this.expressionStatement();
+    } else {
+      this.eat('SEMICOLON');
+    }
+
+    if (this.current.type !== 'SEMICOLON') {
+      test = this.expression();
+    }
+
+    this.eat('SEMICOLON');
+
+    if (this.current.type !== 'RPAREN') {
+      update = this.expression();
+    }
+
+    if (this.current.type !== 'RPAREN') {
+      throw new ParseError(
+        "Expected ')' after for loop clauses",
+        this.current,
+        this.source,
+        "Did you forget to close the for loop header?"
+      );
+    }
+
+    this.eat('RPAREN');
+  } else {
+    throw new ParseError(
+      "Expected '(' after 'for'",
+      this.current,
+      this.source,
+      "Classic for loops require parentheses"
+    );
+  }
+
+  if (this.current.type !== 'LBRACE') {
+    throw new ParseError(
+      "Expected '{' to start for loop body",
+      this.current,
+      this.source,
+      "For loops require a block body"
+    );
+  }
+
+  const body = this.block();
+
+  return { 
+    type: 'ForStatement', 
+    init, 
+    test, 
+    update, 
+    body,
+    line: t.line,
+    column: t.column
+  };
+}
+
+breakStatement() {
+  const t = this.current; // BREAK token
+  this.eat('BREAK');
+  if (this.current.type === 'SEMICOLON') this.advance();
+  return { type: 'BreakStatement', line: t.line, column: t.column };
+}
+
+continueStatement() {
+  const t = this.current; 
+  this.eat('CONTINUE');
+  if (this.current.type === 'SEMICOLON') this.advance();
+  return { type: 'ContinueStatement', line: t.line, column: t.column };
+}
+funcDeclaration() {
+  const t = this.current; 
+  this.eat('FUNC');
+
+  if (this.current.type !== 'IDENTIFIER') {
+    throw new ParseError(
+      "Expected function name after 'func'",
+      this.current,
+      this.source,
+      "Functions must have a name, e.g. func add(a, b) { ... }"
+    );
+  }
+
+  const nameToken = this.current;
+  const name = nameToken.value;
+  this.eat('IDENTIFIER');
+
+  let params = [];
+
+  if (this.current.type === 'LPAREN') {
+    this.eat('LPAREN');
+
+    if (this.current.type !== 'RPAREN') {
+      if (this.current.type !== 'IDENTIFIER') {
+        throw new ParseError(
+          "Expected parameter name",
+          this.current,
+          this.source,
+          "Function parameters must be identifiers"
+        );
+      }
+
+      let paramToken = this.current;
+      params.push({
+        name: paramToken.value,
+        line: paramToken.line,
+        column: paramToken.column
+      });
+      this.eat('IDENTIFIER');
+
+      while (this.current.type === 'COMMA') {
+        this.eat('COMMA');
+
+        if (this.current.type !== 'IDENTIFIER') {
+          throw new ParseError(
+            "Expected parameter name after ','",
+            this.current,
+            this.source,
+            "Each parameter must be an identifier"
+          );
+        }
+
+        paramToken = this.current;
+        params.push({
+          name: paramToken.value,
+          line: paramToken.line,
+          column: paramToken.column
+        });
+        this.eat('IDENTIFIER');
+      }
+    }
+
+    if (this.current.type !== 'RPAREN') {
+      throw new ParseError(
+        "Expected ')' after function parameters",
+        this.current,
+        this.source,
+        "Did you forget to close the parameter list?"
+      );
+    }
+
+    this.eat('RPAREN');
+  } 
+  else if (this.current.type === 'IDENTIFIER') {
+    const paramToken = this.current;
+    params.push({
+      name: paramToken.value,
+      line: paramToken.line,
+      column: paramToken.column
+    });
+    this.eat('IDENTIFIER');
+  }
+
+  if (this.current.type !== 'LBRACE') {
+    throw new ParseError(
+      "Expected '{' to start function body",
+      this.current,
+      this.source,
+      "Functions must have a block body"
+    );
+  }
+
+  const body = this.block();
+
+  return {
+    type: 'FunctionDeclaration',
+    name,
+    params,
+    body,
+    line: t.line,
+    column: t.column
+  };
+}
+
+
+returnStatement() {
+  const t = this.current; // RETURN token
+  this.eat('RETURN');
+
+  let argument = null;
+  if (this.current.type !== 'SEMICOLON') {
+    argument = this.expression();
+  }
+
+  if (this.current.type === 'SEMICOLON') this.eat('SEMICOLON');
+
+  return { type: 'ReturnStatement', argument, line: t.line, column: t.column };
+}
+statementOrBlock() {
+  if (this.current.type === 'LBRACE') {
+    return this.block();
+  }
+  return this.statement();
+}
+block() {
+  const t = this.current; // LBRACE token
+  this.eat('LBRACE');
+
+  const body = [];
+
+  while (this.current.type !== 'RBRACE') {
+    if (this.current.type === 'EOF') {
+      throw new ParseError(
+        "Unterminated block",
+        this.current,
+        this.source,
+        "Did you forget to close the block with '}'?"
+      );
+    }
+    body.push(this.statement());
+  }
+
+  this.eat('RBRACE');
+
+  return {
+    type: 'BlockStatement',
+    body,
+    line: t.line,
+    column: t.column
+  };
+}
+
+
+expressionStatement() {
+  const exprToken = this.current;
+  const expr = this.expression();
+  if (this.current.type === 'SEMICOLON') this.eat('SEMICOLON');
+  return { type: 'ExpressionStatement', expression: expr, line: exprToken.line, column: exprToken.column };
+}
+
+expression() {
+  return this.assignment();
+}
+assignment() {
+  const node = this.ternary();
+  const compoundOps = ['PLUSEQ', 'MINUSEQ', 'STAREQ', 'SLASHEQ', 'MODEQ'];
+
+  const t = this.current;
+
+  if (compoundOps.includes(t.type)) {
+    const op = t.type;
+    this.eat(op);
+    const right = this.assignment();
+
+    return {
+      type: 'CompoundAssignment',
+      operator: op,
+      left: node,
+      right,
+      line: t.line,
+      column: t.column
+    };
+  }
+
+  if (t.type === 'EQEQ') {
+    throw new ParseError(
+      "Unexpected '==' in assignment",
+      t,
+      this.source,
+      "Did you mean '=' to assign a value?"
+    );
+  }
+
+  if (t.type === 'EQUAL') {
+    this.eat('EQUAL');
+    const right = this.assignment();
+
+    return {
+      type: 'AssignmentExpression',
+      left: node,
+      right,
+      line: t.line,
+      column: t.column
+    };
+  }
+
+  return node;
+}
+
+ternary() {
+  let node = this.nullishCoalescing();
+
+  while (this.current.type === 'QUESTION') {
+    const t = this.current;
+    this.eat('QUESTION');
+
+    const consequent = this.expression();
+
+    if (this.current.type !== 'COLON') {
+      throw new ParseError(
+        "Expected ':' in conditional expression",
+        this.current,
+        this.source,
+        "Ternary expressions must follow the form: condition ? a : b"
+      );
+    }
+
+    this.eat('COLON');
+    const alternate = this.expression();
+
+    node = {
+      type: 'ConditionalExpression',
+      test: node,
+      consequent,
+      alternate,
+      line: t.line,
+      column: t.column
+    };
+  }
+
+  return node;
+}
+
+nullishCoalescing() {
+  let node = this.logicalOr(); 
+  while (this.current.type === 'NULLISH_COALESCING') {
+    const t = this.current;
+    this.eat('NULLISH_COALESCING');
+    node = { type: 'LogicalExpression', operator: '??', left: node, right: this.logicalOr(), line: t.line, column: t.column };
+  }
+  return node;
+}
+logicalOr() {
+  let node = this.logicalAnd();
+  while (this.current.type === 'OR') {
+    const t = this.current;
+    const op = t.type;
+    this.eat(op);
+    node = { type: 'LogicalExpression', operator: op, left: node, right: this.logicalAnd(), line: t.line, column: t.column };
+  }
+  return node;
+}
+
+logicalAnd() {
+  let node = this.equality();
+  while (this.current.type === 'AND') {
+    const t = this.current;
+    const op = t.type;
+    this.eat(op);
+    node = { type: 'LogicalExpression', operator: op, left: node, right: this.equality(), line: t.line, column: t.column };
+  }
+  return node;
+}
+
+equality() {
+  let node = this.comparison();
+  while (['EQEQ', 'NOTEQ'].includes(this.current.type)) {
+    const t = this.current;
+    const op = t.type;
+    this.eat(op);
+    node = { type: 'BinaryExpression', operator: op, left: node, right: this.comparison(), line: t.line, column: t.column };
+  }
+  return node;
+}
+
+comparison() {
+  let node = this.term();
+  while (['LT', 'LTE', 'GT', 'GTE'].includes(this.current.type)) {
+    const t = this.current;
+    const op = t.type;
+    this.eat(op);
+    node = { type: 'BinaryExpression', operator: op, left: node, right: this.term(), line: t.line, column: t.column };
+  }
+  return node;
+}
+
+term() {
+  let node = this.factor();
+  while (['PLUS', 'MINUS'].includes(this.current.type)) {
+    const t = this.current;
+    const op = t.type;
+    this.eat(op);
+    node = { type: 'BinaryExpression', operator: op, left: node, right: this.factor(), line: t.line, column: t.column };
+  }
+  return node;
+}
+
+factor() {
+  let node = this.unary();
+  while (['STAR', 'SLASH', 'MOD'].includes(this.current.type)) {
+    const t = this.current;
+    const op = t.type;
+    this.eat(op);
+    node = { type: 'BinaryExpression', operator: op, left: node, right: this.unary(), line: t.line, column: t.column };
+  }
+  return node;
+}
+
+
+unary() {
+  const t = this.current;
+
+  if (['NOT', 'MINUS', 'PLUS'].includes(t.type)) {
+    const op = t.type;
+    this.eat(op);
+
+    if (this.current.type === 'EOF') {
+      throw new ParseError(
+        "Missing operand for unary operator",
+        this.current,
+        this.source,
+        "Unary operators must be followed by an expression"
+      );
+    }
+
+    return {
+      type: 'UnaryExpression',
+      operator: op,
+      argument: this.unary(),
+      line: t.line,
+      column: t.column
+    };
+  }
+
+  if (t.type === 'PLUSPLUS' || t.type === 'MINUSMINUS') {
+    const op = t.type;
+    this.eat(op);
+
+    const argument = this.unary();
+
+    if (!argument || !argument.type) {
+      throw new ParseError(
+        "Invalid operand for update operator",
+        t,
+        this.source,
+        "Increment and decrement operators must apply to a variable"
+      );
+    }
+
+    return {
+      type: 'UpdateExpression',
+      operator: op,
+      argument,
+      prefix: true,
+      line: t.line,
+      column: t.column
+    };
+  }
+
+  return this.postfix();
+}
+
+postfix() {
+  let node = this.primary();
+
+  while (true) {
+    const t = this.current;
+
+    // Handle indexing / slicing
+    if (t.type === 'LBRACKET') {
+      const startLine = t.line;
+      const startCol = t.column;
+      this.eat('LBRACKET');
+
+      let start = null;
+      let end = null;
+      let step = null;
+
+      // Slice: [:end:step] or [start:end:step]
+      if (this.current.type === 'COLON') {
+        this.eat('COLON');
+        if (this.current.type !== 'RBRACKET' && this.current.type !== 'COLON') {
+          end = this.expression();
+        }
+        if (this.current.type === 'COLON') {
+          this.eat('COLON');
+          if (this.current.type !== 'RBRACKET') {
+            step = this.expression();
+          }
+        }
+        if (this.current.type !== 'RBRACKET') {
+          throw new ParseError("Expected ']' after slice", this.current, this.source);
+        }
+        this.eat('RBRACKET');
+
+        node = { type: 'SliceExpression', object: node, start, end, step, line: startLine, column: startCol };
+      } else {
+        // Normal index or slice starting with an expression
+        start = this.expression();
+        if (this.current.type === 'COLON') {
+          this.eat('COLON');
+          if (this.current.type !== 'RBRACKET' && this.current.type !== 'COLON') {
+            end = this.expression();
+          }
+          if (this.current.type === 'COLON') {
+            this.eat('COLON');
+            if (this.current.type !== 'RBRACKET') {
+              step = this.expression();
+            }
+          }
+          if (this.current.type !== 'RBRACKET') {
+            throw new ParseError("Expected ']' after slice", this.current, this.source);
+          }
+          this.eat('RBRACKET');
+
+          node = { type: 'SliceExpression', object: node, start, end, step, line: startLine, column: startCol };
+        } else {
+          this.eat('RBRACKET');
+          node = { type: 'IndexExpression', object: node, indexer: start, line: startLine, column: startCol };
+        }
+      }
+      continue; // continue to allow . or () after []
+    }
+
+    // Handle function call
+    if (t.type === 'LPAREN') {
+      const startLine = t.line;
+      const startCol = t.column;
+      this.eat('LPAREN');
+
+      const args = [];
+      while (this.current.type !== 'RPAREN') {
+        if (this.current.type === 'EOF') {
+          throw new ParseError("Unterminated function call", this.current, this.source, "Did you forget to close ')'?");
+        }
+        args.push(this.expression());
+        if (this.current.type === 'COMMA') this.eat('COMMA');
+      }
+
+      this.eat('RPAREN');
+
+      node = { type: 'CallExpression', callee: node, arguments: args, line: startLine, column: startCol };
+      continue;
+    }
+
+    // Handle member access
+    if (t.type === 'DOT') {
+      const startLine = t.line;
+      const startCol = t.column;
+      this.eat('DOT');
+
+      if (this.current.type !== 'IDENTIFIER') {
+        throw new ParseError("Expected property name after '.'", this.current, this.source, "Member access requires a property name, e.g. obj.value");
+      }
+
+      const property = this.current.value;
+      this.eat('IDENTIFIER');
+
+      node = { type: 'MemberExpression', object: node, property, line: startLine, column: startCol };
+      continue;
+    }
+
+    // Handle postfix update operators
+    if (t.type === 'PLUSPLUS' || t.type === 'MINUSMINUS') {
+      this.eat(t.type);
+      node = { type: 'UpdateExpression', operator: t.type, argument: node, prefix: false, line: t.line, column: t.column };
+      continue;
+    }
+
+    break;
+  }
+
+  return node;
+}
+
+
+arrowFunction(params) {
+  const t = this.current;
+  this.eat('ARROW');
+
+  let body;
+  let isBlock = false;
+
+  if (this.current.type === 'LBRACE') {
+    body = this.block();
+    isBlock = true;
+  } 
+  else if (this.current.type === 'EOF') {
+    throw new ParseError(
+      "Missing arrow function body",
+      this.current,
+      this.source,
+      "Arrow functions require a body, e.g. x => x * 2"
+    );
+  } 
+  else {
+    body = this.expression();
+  }
+
+  const startLine = params.length > 0 ? params[0].line : t.line;
+  const startCol  = params.length > 0 ? params[0].column : t.column;
+
+  return {
+    type: 'ArrowFunctionExpression',
+    params,
+    body,
+    isBlock,
+    line: startLine,
+    column: startCol
+  };
+}
+
+
+primary() {
+  const t = this.current;
+
+  if (t.type === 'NUMBER') {
+    this.eat('NUMBER');
+    return { type: 'Literal', value: t.value, line: t.line, column: t.column };
+  }
+
+  if (t.type === 'STRING') {
+    this.eat('STRING');
+    return { type: 'Literal', value: t.value, line: t.line, column: t.column };
+  }
+
+  if (t.type === 'TRUE') {
+    this.eat('TRUE');
+    return { type: 'Literal', value: true, line: t.line, column: t.column };
+  }
+
+  if (t.type === 'FALSE') {
+    this.eat('FALSE');
+    return { type: 'Literal', value: false, line: t.line, column: t.column };
+  }
+
+  if (t.type === 'NULL') {
+    this.eat('NULL');
+    return { type: 'Literal', value: null, line: t.line, column: t.column };
+  }
+
+  if (t.type === 'AWAIT') {
+    this.eat('AWAIT');
+    const argument = this.expression();
+    return { type: 'AwaitExpression', argument, line: t.line, column: t.column };
+  }
+
+  if (t.type === 'NEW') {
+    this.eat('NEW');
+    const callee = this.primary();
+
+    if (this.current.type !== 'LPAREN') {
+      throw new ParseError(
+        "Expected '(' after 'new'",
+        this.current,
+        this.source,
+        "Use 'new ClassName(...)'"
+      );
+    }
+
+    this.eat('LPAREN');
+    const args = [];
+    if (this.current.type !== 'RPAREN') {
+      args.push(this.expression());
+      while (this.current.type === 'COMMA') {
+        this.eat('COMMA');
+        if (this.current.type === 'RPAREN') break;
+        args.push(this.expression());
+      }
+    }
+
+    if (this.current.type !== 'RPAREN') {
+      throw new ParseError(
+        "Expected ')' to close arguments for 'new'",
+        this.current,
+        this.source
+      );
+    }
+
+    this.eat('RPAREN');
+
+    return { type: 'NewExpression', callee, arguments: args, line: t.line, column: t.column };
+  }
+
+  if (t.type === 'ASK') {
+    this.eat('ASK');
+
+    if (this.current.type !== 'LPAREN') {
+      throw new ParseError(
+        "Expected '(' after 'ask'",
+        this.current,
+        this.source
+      );
+    }
+
+    this.eat('LPAREN');
+    const args = [];
+    if (this.current.type !== 'RPAREN') {
+      args.push(this.expression());
+      while (this.current.type === 'COMMA') {
+        this.eat('COMMA');
+        if (this.current.type === 'RPAREN') break;
+        args.push(this.expression());
+      }
+    }
+
+    if (this.current.type !== 'RPAREN') {
+      throw new ParseError(
+        "Expected ')' after arguments to 'ask'",
+        this.current,
+        this.source
+      );
+    }
+
+    this.eat('RPAREN');
+
+    return {
+      type: 'CallExpression',
+      callee: { type: 'Identifier', name: 'ask', line: t.line, column: t.column },
+      arguments: args,
+      line: t.line,
+      column: t.column
+    };
+  }
+if (t.type === 'FUNC') {
+    const funcToken = t;
+    this.eat('FUNC');
+
+    let params = [];
+    if (this.current.type === 'LPAREN') {
+      this.eat('LPAREN');
+
+      if (this.current.type !== 'RPAREN') {
+        if (this.current.type !== 'IDENTIFIER') {
+          throw new ParseError(
+            "Expected parameter name",
+            this.current,
+            this.source
+          );
+        }
+
+        params.push(this.current.value);
+        this.eat('IDENTIFIER');
+
+        while (this.current.type === 'COMMA') {
+          this.eat('COMMA');
+          if (this.current.type !== 'IDENTIFIER') {
+            throw new ParseError(
+              "Expected parameter name",
+              this.current,
+              this.source
+            );
+          }
+          params.push(this.current.value);
+          this.eat('IDENTIFIER');
+        }
+      }
+
+      if (this.current.type !== 'RPAREN') {
+        throw new ParseError(
+          "Expected ')' after function parameters",
+          this.current,
+          this.source
+        );
+      }
+
+      this.eat('RPAREN');
+    }
+
+    if (this.current.type !== 'LBRACE') {
+      throw new ParseError(
+        "Expected '{' to start function body",
+        this.current,
+        this.source
+      );
+    }
+
+    const body = this.block();
+
+    return {
+      type: 'FunctionExpression',
+      params,
+      body,
+      line: funcToken.line,
+      column: funcToken.column
+    };
+  }
+
+  if (t.type === 'IDENTIFIER') {
+    const name = t.value;
+    this.eat('IDENTIFIER');
+
+    if (this.current.type === 'ARROW') {
+      return this.arrowFunction([{ type: 'Identifier', name, line: t.line, column: t.column }]);
+    }
+
+    return { type: 'Identifier', name, line: t.line, column: t.column };
+  }
+
+  if (t.type === 'LPAREN') {
+    const startLine = t.line;
+    const startCol = t.column;
+    this.eat('LPAREN');
+
+    const elements = [];
+    if (this.current.type !== 'RPAREN') {
+      elements.push(this.expression());
+      while (this.current.type === 'COMMA') {
+        this.eat('COMMA');
+        if (this.current.type === 'RPAREN') break;
+        elements.push(this.expression());
+      }
+    }
+
+    if (this.current.type !== 'RPAREN') {
+      throw new ParseError(
+        "Expected ')' after expression",
+        this.current,
+        this.source
+      );
+    }
+
+    this.eat('RPAREN');
+
+    if (this.current.type === 'ARROW') {
+      return this.arrowFunction(elements);
+    }
+
+    return elements.length === 1
+      ? elements[0]
+      : { type: 'ArrayExpression', elements, line: startLine, column: startCol };
+  }
+
+  if (t.type === 'LBRACKET') {
+    const startLine = t.line;
+    const startCol = t.column;
+    this.eat('LBRACKET');
+
+    const elements = [];
+    if (this.current.type !== 'RBRACKET') {
+      elements.push(this.expression());
+      while (this.current.type === 'COMMA') {
+        this.eat('COMMA');
+        if (this.current.type === 'RBRACKET') break;
+        elements.push(this.expression());
+      }
+    }
+
+    if (this.current.type !== 'RBRACKET') {
+      throw new ParseError(
+        "Expected ']' after array elements",
+        this.current,
+        this.source
+      );
+    }
+
+    this.eat('RBRACKET');
+
+    return { type: 'ArrayExpression', elements, line: startLine, column: startCol };
+  }
+
+  if (t.type === 'LBRACE') {
+    const startLine = t.line;
+    const startCol = t.column;
+    this.eat('LBRACE');
+
+    const props = [];
+
+    while (this.current.type !== 'RBRACE') {
+      if (this.current.type === 'EOF') {
+        throw new ParseError(
+          "Unterminated object literal",
+          this.current,
+          this.source,
+          "Did you forget to close '}'?"
+        );
+      }
+
+      let key;
+
+      if (this.current.type === 'IDENTIFIER') {
+        const k = this.current;
+        this.eat('IDENTIFIER');
+        key = { type: 'Literal', value: k.value, line: k.line, column: k.column };
+      } 
+      else if (this.current.type === 'STRING') {
+        const k = this.current;
+        this.eat('STRING');
+        key = { type: 'Literal', value: k.value, line: k.line, column: k.column };
+      } 
+      else {
+        throw new ParseError(
+          'Invalid object key',
+          this.current,
+          this.source,
+          "Object keys must be identifiers or strings"
+        );
+      }
+
+      if (this.current.type !== 'COLON') {
+        throw new ParseError(
+          "Expected ':' after object key",
+          this.current,
+          this.source
+        );
+      }
+
+      this.eat('COLON');
+      const value = this.expression();
+      props.push({ key, value });
+
+      if (this.current.type === 'COMMA') this.eat('COMMA');
+    }
+
+    this.eat('RBRACE');
+    return { type: 'ObjectExpression', props, line: startLine, column: startCol };
+  }
+
+  throw new ParseError(
+    `Unexpected token '${t.type}'`,
+    t,
+    this.source
+  );
+} 
+
+}
+module.exports = Parser;
+
+    </code></pre>
+  </div>
+
+  <div class="file">
+    <div class="file-header">
+      evaluator.js
+      <button onclick="copyCode('evaluator')">Copy</button>
+    </div>
+    <pre><code id="evaluator" class="placeholder">
+const readlineSync = require('readline-sync');
+const fs = require('fs');
+const Lexer = require('./lexer');
+const Parser = require('./parser');
+const path = require('path');
+class ReturnValue {
+  constructor(value) { this.value = value; }
+}
+class BreakSignal {}
+class ContinueSignal {}
+const COLOR = {
+  reset: '\x1b[0m',
+  red: '\x1b[31m',
+  yellow: '\x1b[33m',
+  white: '\x1b[37m'
+};
+
+class RuntimeError extends Error {
+  constructor(message, node, source, env = null) {
+    const line = node?.line ?? '?';
+    const column = node?.column ?? '?';
+
+    let output =
+      `${COLOR.red}${message}${COLOR.reset} at line ${line}, column ${column}\n`;
+
+    if (source && node?.line != null) {
+      const lines = source.split('\n');
+      const srcLine = lines[node.line - 1] || '';
+      const caretPos =
+        typeof column === 'number' && column > 0 ? column - 1 : 0;
+
+      output += `${COLOR.white}  ${srcLine}\n`;
+      output += `  ${' '.repeat(caretPos)}^\n${COLOR.reset}`;
+    }
+
+    if (env && message.startsWith('Undefined variable:')) {
+      const nameMatch = message.match(/"(.+?)"/);
+      if (nameMatch) {
+        const name = nameMatch[1];
+        const suggestion = RuntimeError.suggest(name, env);
+        if (suggestion) {
+          output +=
+            `${COLOR.yellow}Did you mean "${suggestion}"?${COLOR.reset}\n`;
+        }
+      }
+    }
+
+    super(output);
+    this.name = 'RuntimeError';
+    this.line = line;
+    this.column = column;
+  }
+
+  static suggest(name, env) {
+    const names = new Set();
+    let current = env;
+
+    while (current) {
+      for (const key of Object.keys(current.store)) {
+        names.add(key);
+      }
+      current = current.parent;
+    }
+
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const item of names) {
+      const dist =
+        Math.abs(item.length - name.length) +
+        [...name].filter((c, i) => c !== item[i]).length;
+
+      if (dist < bestScore && dist <= 2) {
+        bestScore = dist;
+        best = item;
+      }
+    }
+
+    return best;
+  }
+}
+
+class Environment {
+  constructor(parent = null) {
+    this.store = Object.create(null);
+    this.parent = parent;
+  }
+
+  has(name) {
+    if (name in this.store) return true;
+    if (this.parent) return this.parent.has(name);
+    return false;
+  }
+
+ get(name, node, source) {
+  if (name in this.store) return this.store[name];
+  if (this.parent) return this.parent.get(name, node, source);
+
+  throw new RuntimeError(`Undefined variable: "${name}"`, node, source, this);
+}
+
+
+
+  set(name, value) {
+    if (name in this.store) { this.store[name] = value; return value; }
+    if (this.parent && this.parent.has(name)) { return this.parent.set(name, value); }
+    this.store[name] = value;
+    return value;
+  }
+
+  define(name, value) {
+    this.store[name] = value;
+    return value;
+  }
+}
+
+class Evaluator {
+  constructor(source = '') {
+    this.source = source;
+    this.global = new Environment();
+    this.setupBuiltins();
+  }
+async callFunction(fn, args, env, node = null) {
+  if (typeof fn === 'function') {
+    const val = await fn(...args);
+    return val === undefined ? null : val; // <<< enforce null
+  }
+
+  if (fn && typeof fn === 'object' && fn.body && fn.params) {
+    const callEnv = new Environment(fn.env);
+
+    for (let i = 0; i < fn.params.length; i++) {
+      const param = fn.params[i];
+      const name = typeof param === 'string' ? param : param.name;
+      callEnv.define(name, args[i]);
+    }
+
+    try {
+      const val = await this.evaluate(fn.body, callEnv);
+      return val === undefined ? null : val; // <<< enforce null
+    } catch (e) {
+      if (e instanceof ReturnValue) return e.value === undefined ? null : e.value; // <<< enforce null
+      throw e;
+    }
+  }
+
+  throw new RuntimeError('Value is not callable', node, this.source);
+}
+
+
+
+formatValue(value, seen = new Set()) {
+  const color = require('starlight-color');
+
+  if (typeof value === 'object' && value !== null) {
+    if (seen.has(value)) return color.red('[Circular]');
+    seen.add(value);
+  }
+
+  if (value === null) return color.yellow('None');
+  if (value === undefined) return color.yellow('undefined');
+
+  const t = typeof value;
+
+  if (t === 'string') return color.cyan(value);
+
+  if (t === 'number') return color.green(String(value));
+
+  if (t === 'boolean') return color.yellow(value ? 'true' : 'false');
+
+  if (t === 'function') {
+    return color.magenta(value.name ? `<function ${value.name}>` : '<function>');
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.map(v => this.formatValue(v, seen));
+    return color.white('[ ' + items.join(', ') + ' ]');
+  }
+
+  if (t === 'object') {
+    if (value.params && value.body) {
+      return color.magenta(value.name ? `<function ${value.name}>` : '<function>');
+    }
+
+    const entries = Object.entries(value).map(
+      ([k, v]) => color.magenta(`${k}: `) + this.formatValue(v, seen)
+    );
+    return color.magenta('{ ') + entries.join(color.magenta(', ')) + color.magenta(' }');
+  }
+
+  try {
+    return String(value);
+  } catch {
+    return color.red('[Unprintable]');
+  }
+} 
+
+
+  setupBuiltins() {
+    const evaluator = this;
+    this.global.define('len', arg => {
+        if (Array.isArray(arg) || typeof arg === 'string') return arg.length;
+        if (arg && typeof arg === 'object') return Object.keys(arg).length;
+        return 0;
+    });
+this.global.define('lower', arg => {
+    if (typeof arg !== 'string') return String(arg).toLowerCase();
+    return arg.toLowerCase();
+  });
+this.global.define('toStr', arg => String(arg));
+
+  this.global.define('upper', arg => {
+    if (typeof arg !== 'string') return String(arg).toUpperCase();
+    return arg.toUpperCase();
+  });
+
+  this.global.define('trim', arg => {
+    if (typeof arg !== 'string') return String(arg).trim();
+    return arg.trim();
+  });
+
+  this.global.define('startsWith', (str, prefix) => {
+    if (typeof str !== 'string') str = String(str);
+    if (typeof prefix !== 'string') prefix = String(prefix);
+    return str.startsWith(prefix);
+  });
+
+  this.global.define('endsWith', (str, suffix) => {
+    if (typeof str !== 'string') str = String(str);
+    if (typeof suffix !== 'string') suffix = String(suffix);
+    return str.endsWith(suffix);
+  });
+
+  this.global.define('includes', (str, substr) => {
+    if (typeof str !== 'string') str = String(str);
+    if (typeof substr !== 'string') substr = String(substr);
+    return str.includes(substr);
+  });
+
+  this.global.define('repeat', (str, times) => {
+    if (typeof str !== 'string') str = String(str);
+    return str.repeat(Number(times) || 0);
+  });
+
+  this.global.define('replace', (str, search, replacement) => {
+    if (typeof str !== 'string') str = String(str);
+    if (typeof search !== 'string') search = String(search);
+    if (typeof replacement !== 'string') replacement = String(replacement);
+    return str.split(search).join(replacement);
+  });
+    this.global.define('print', arg => { console.log(arg); return null; });
+    this.global.define('type', arg => {
+        if (Array.isArray(arg)) return 'array';
+        return typeof arg;
+    });
+this.global.define('isNaN', arg => {
+  return typeof arg !== 'number' || Number.isNaN(arg);
+});
+
+
+this.global.define('random', (min, max) => {
+  if (max === undefined) {
+    // Only one argument → random between 0 and min
+    return Math.floor(Math.random() * min);
+  }
+  min = Number(min);
+  max = Number(max);
+  if (isNaN(min) || isNaN(max)) return 0;
+  return Math.floor(Math.random() * (max - min)) + min;
+});
+this.global.define('JSONParse', arg => {
+        if (typeof arg !== 'string') {
+            throw new RuntimeError('JSONParse expects a string', null, evaluator.source);
+        }
+        try {
+            return JSON.parse(arg);
+        } catch (e) {
+            throw new RuntimeError('Invalid JSON string: ' + e.message, null, evaluator.source);
+        }
+    });
+
+    this.global.define('JSONStringify', arg => {
+        try {
+            return JSON.stringify(arg);
+        } catch (e) {
+            throw new RuntimeError('Cannot stringify value: ' + e.message, null, evaluator.source);
+        }
+    });
+   this.global.define('map', async (array, fn) => {
+    if (!Array.isArray(array)) {
+      throw new RuntimeError('map() expects an array', null, evaluator.source);
+    }
+
+    const result = [];
+    for (let i = 0; i < array.length; i++) {
+      result.push(
+        await evaluator.callFunction(
+          fn,
+          [array[i], i, array],
+          evaluator.global
+        )
+      );
+    }
+    return result;
+  });
+this.global.define('encodeURLComponent', arg => {
+    if (arg === null || arg === undefined) return '';
+    return encodeURIComponent(String(arg));
+});
+this.global.define("Date", Date);
+this.global.define("Math", Math);
+this.global.define("String", String);
+  this.global.define('filter', async (array, fn) => {
+    if (!Array.isArray(array)) {
+      throw new RuntimeError('filter() expects an array', null, evaluator.source);
+    }
+
+    const result = [];
+    for (let i = 0; i < array.length; i++) {
+      if (
+        await evaluator.callFunction(
+          fn,
+          [array[i], i, array],
+          evaluator.global
+        )
+      ) {
+        result.push(array[i]);
+      }
+    }
+    return result;
+  });
+
+  this.global.define('reduce', async (array, fn, initial) => {
+    if (!Array.isArray(array)) {
+      throw new RuntimeError('reduce() expects an array', null, evaluator.source);
+    }
+
+    let acc;
+    let i = 0;
+
+    if (initial !== undefined) {
+      acc = initial;
+    } else {
+      if (array.length === 0) {
+        throw new RuntimeError(
+          'reduce() of empty array with no initial value',
+          null,
+          evaluator.source
+        );
+      }
+      acc = array[0];
+      i = 1;
+    }
+
+    for (; i < array.length; i++) {
+      acc = await evaluator.callFunction(
+        fn,
+        [acc, array[i], i, array],
+        evaluator.global
+      );
+    }
+
+    return acc;
+  });
+this.global.define('hasOwn', (obj, prop) => {
+  return Object.prototype.hasOwnProperty.call(obj, prop)
+});
+
+    this.global.define('keys', arg => arg && typeof arg === 'object' ? Object.keys(arg) : []);
+    this.global.define('values', arg => arg && typeof arg === 'object' ? Object.values(arg) : []);
+this.global.define('range', (...args) => {
+  let start = 0;
+  let end = 0;
+  let step = 1;
+
+  if (args.length === 1) {
+    end = Number(args[0]);
+  } else if (args.length === 2) {
+    start = Number(args[0]);
+    end = Number(args[1]);
+  } else if (args.length === 3) {
+    start = Number(args[0]);
+    end = Number(args[1]);
+    step = Number(args[2]);
+  } else {
+    throw new RuntimeError('range() expects 1 to 3 arguments', null, this.source);
+  }
+
+  if (step === 0) {
+    throw new RuntimeError('range() step cannot be 0', null, this.source);
+  }
+
+  const result = [];
+  if (step > 0) {
+    for (let i = start; i < end; i += step) {
+      result.push(i);
+    }
+  } else {
+    for (let i = start; i > end; i += step) {
+      result.push(i);
+    }
+  }
+
+  return result;
+});
+this.global.define('floor', arg => Math.floor(Number(arg)));
+this.global.define('ceil', arg => Math.ceil(Number(arg)));
+this.global.define('round', arg => Math.round(Number(arg)));
+this.global.define('abs', arg => Math.abs(Number(arg)));
+this.global.define('pow', (base, exp) => Math.pow(Number(base), Number(exp)));
+this.global.define('sqrt', arg => Math.sqrt(Number(arg)));
+this.global.define('min', (...args) => Math.min(...args.map(Number)));
+this.global.define('max', (...args) => Math.max(...args.map(Number)));
+this.global.define('randomFloat', (min, max) => {
+    min = Number(min); max = Number(max);
+    if (isNaN(min) || isNaN(max)) return 0;
+    return Math.random() * (max - min) + min;
+});
+
+this.global.define('push', (arr, val) => {
+    if (!Array.isArray(arr)) throw new RuntimeError('push() expects an array', null, this.source);
+    arr.push(val); return arr.length;
+});
+this.global.define('pop', arr => {
+    if (!Array.isArray(arr)) throw new RuntimeError('pop() expects an array', null, this.source);
+    return arr.pop();
+});
+this.global.define('shift', arr => {
+    if (!Array.isArray(arr)) throw new RuntimeError('shift() expects an array', null, this.source);
+    return arr.shift();
+});
+this.global.define('unshift', (arr, val) => {
+    if (!Array.isArray(arr)) throw new RuntimeError('unshift() expects an array', null, this.source);
+    arr.unshift(val); return arr.length;
+});
+this.global.define('sort', (arr, fn) => {
+    if (!Array.isArray(arr)) throw new RuntimeError('sort() expects an array', null, this.source);
+    if (fn && typeof fn === 'function') return arr.sort(fn);
+    return arr.sort();
+});
+this.global.define('reverse', arr => {
+    if (!Array.isArray(arr)) throw new RuntimeError('reverse() expects an array', null, this.source);
+    return arr.reverse();
+});
+
+this.global.define('has', (obj, key) => obj && typeof obj === 'object' ? obj.hasOwnProperty(key) : false);
+this.global.define('merge', (obj1, obj2) => {
+    if (!obj1 || typeof obj1 !== 'object') obj1 = {};
+    if (!obj2 || typeof obj2 !== 'object') obj2 = {};
+    return { ...obj1, ...obj2 };
+});
+
+this.global.define('uuid', () => {
+    // simple random UUID v4
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+});
+this.global.define('timestamp', () => Date.now());
+this.global.define('clone', arg => {
+    if (Array.isArray(arg)) return [...arg];
+    if (arg && typeof arg === 'object') return { ...arg };
+    return arg; // primitive types
+});
+this.global.define('typeOf', arg => {
+    if (arg === null) return 'null';
+    if (Array.isArray(arg)) return 'array';
+    return typeof arg;
+});
+
+    this.global.define('ask', prompt => {
+        const readlineSync = require('readline-sync');
+        return readlineSync.question(prompt + ' ');
+    });
+    this.global.define('num', arg => {
+    if (arg === null || arg === undefined) return 0;
+
+    const t = typeof arg;
+
+    if (t === 'number') return arg;       // already a number
+    if (t === 'boolean') return arg ? 1 : 0;
+    if (t === 'string') {
+        const n = Number(arg);
+        if (!Number.isNaN(n)) return n;  // numeric string
+        return 0;                        // non-numeric string becomes 0
+    }
+    if (Array.isArray(arg)) return arg.length;   // array → length
+    if (t === 'object') return Object.keys(arg).length; // object → number of keys
+
+    // fallback for anything else
+    const n = Number(arg);
+    if (!Number.isNaN(n)) return n;
+    return 0;
+});
+
+this.global.define('fetch', async (url, options = {}) => {
+  const res = await fetch(url, options);
+  return {
+    status: res.status,
+    ok: res.ok,
+    text: async () => await res.text(),
+    json: async () => await res.json()
+  };
+});
+
+this.global.define('get', async (url) => {
+  const res = await fetch(url);
+  return await res.json();
+});
+
+this.global.define('post', async (url, data) => {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return await res.json();
+});
+
+this.global.define('sleep', async (ms) => {
+  return new Promise(resolve => setTimeout(resolve, ms));
+});
+this.global.define('str', arg => {
+    return String(arg);
+});
+this.global.define('now', () => Date.now()); 
+this.global.define('formatDate', (timestamp, locale = 'en-US', options = {}) => {
+  if (timestamp === null || timestamp === undefined) timestamp = Date.now();
+  const t = typeof timestamp === 'number' ? timestamp : Number(timestamp);
+  if (isNaN(t)) t = Date.now();
+  return new Date(t).toLocaleString(locale, options);
+});
+
+this.global.define('readFile', path => {
+  if (typeof path !== 'string') path = String(path);
+  try {
+    return fs.readFileSync(path, 'utf-8');
+  } catch (e) {
+    throw new RuntimeError('readFile error: ' + e.message, null, this.source);
+  }
+});
+this.global.define('writeFile', (path, content) => {
+  if (typeof path !== 'string') path = String(path);
+  if (typeof content !== 'string') content = String(content);
+  try {
+    fs.writeFileSync(path, content, 'utf-8');
+    return true;
+  } catch (e) {
+    throw new RuntimeError('writeFile error: ' + e.message, null, this.source);
+  }
+});
+
+this.global.define('split', (str, separator) => {
+  if (typeof str !== 'string') str = String(str);
+  if (separator === undefined) separator = '';
+  return str.split(separator);
+});
+
+this.global.define('join', (arr, separator = '') => {
+  if (!Array.isArray(arr)) throw new RuntimeError('join() expects an array', null, this.source);
+  return arr.join(separator);
+});
+
+this.global.define('substring', (str, start, end) => {
+  if (typeof str !== 'string') str = String(str);
+  start = Number(start) || 0;
+  end = end !== undefined ? Number(end) : undefined;
+  return str.substring(start, end);
+});
+
+this.global.define('padStart', (str, targetLength, padString = ' ') => {
+  if (typeof str !== 'string') str = String(str);
+  targetLength = Number(targetLength) || 0;
+  return str.padStart(targetLength, padString);
+});
+
+this.global.define('padEnd', (str, targetLength, padString = ' ') => {
+  if (typeof str !== 'string') str = String(str);
+  targetLength = Number(targetLength) || 0;
+  return str.padEnd(targetLength, padString);
+});
+this.global.define('unique', arr => {
+    if (!Array.isArray(arr)) throw new RuntimeError('unique() expects an array', null, this.source);
+    return [...new Set(arr)];
+});
+
+this.global.define('indexOf', (arr, val) => {
+    if (!Array.isArray(arr)) throw new RuntimeError('indexOf() expects an array', null, this.source);
+    return arr.indexOf(val);
+});
+
+this.global.define('includesArr', (arr, val) => {
+    if (!Array.isArray(arr)) throw new RuntimeError('includesArr() expects an array', null, this.source);
+    return arr.includes(val);
+});
+
+this.global.define('flatten', arr => {
+    if (!Array.isArray(arr)) throw new RuntimeError('flatten() expects an array', null, this.source);
+    return arr.flat(Infinity);
+});
+
+this.global.define('randomChoice', arr => {
+    if (!Array.isArray(arr)) throw new RuntimeError('randomChoice() expects an array', null, this.source);
+    return arr[Math.floor(Math.random() * arr.length)];
+});
+
+this.global.define('entries', obj => {
+    if (!obj || typeof obj !== 'object') throw new RuntimeError('entries() expects an object', null, this.source);
+    return Object.entries(obj);
+});
+
+this.global.define('invert', obj => {
+    if (!obj || typeof obj !== 'object') throw new RuntimeError('invert() expects an object', null, this.source);
+    const result = {};
+    for (const key in obj) result[obj[key]] = key;
+    return result;
+});
+
+this.global.define('isEmpty', arg => {
+    if (arg == null) return true;
+    if (Array.isArray(arg) || typeof arg === 'string') return arg.length === 0;
+    if (typeof arg === 'object') return Object.keys(arg).length === 0;
+    return false;
+});
+
+this.global.define('deepClone', arg => {
+    return JSON.parse(JSON.stringify(arg));
+});
+
+this.global.define('capitalize', str => {
+    if (typeof str !== 'string') str = String(str);
+    if (str.length === 0) return '';
+    return str[0].toUpperCase() + str.slice(1);
+});
+
+this.global.define('reverseStr', str => {
+    if (typeof str !== 'string') str = String(str);
+    return str.split('').reverse().join('');
+});
+
+this.global.define('trimStart', str => {
+    if (typeof str !== 'string') str = String(str);
+    return str.trimStart();
+});
+
+this.global.define('trimEnd', str => {
+    if (typeof str !== 'string') str = String(str);
+    return str.trimEnd();
+});
+
+this.global.define('clamp', (value, min, max) => {
+    value = Number(value); min = Number(min); max = Number(max);
+    return Math.min(Math.max(value, min), max);
+});
+
+this.global.define('sign', value => {
+    value = Number(value);
+    return Math.sign(value);
+});
+
+this.global.define('appendFile', (path, content) => {
+    if (typeof path !== 'string') path = String(path);
+    if (typeof content !== 'string') content = String(content);
+    try {
+        fs.appendFileSync(path, content, 'utf-8');
+        return true;
+    } catch (e) {
+        throw new RuntimeError('appendFile error: ' + e.message, null, this.source);
+    }
+});
+
+this.global.define('exists', path => {
+    if (typeof path !== 'string') path = String(path);
+    return fs.existsSync(path);
+});
+
+this.global.define('mkdir', path => {
+    if (typeof path !== 'string') path = String(path);
+    if (!fs.existsSync(path)) fs.mkdirSync(path, { recursive: true });
+    return true;
+});
+this.global.define('count', (arr, value) => {
+    if (!Array.isArray(arr)) throw new RuntimeError('count() expects an array', null, this.source);
+    return arr.filter(x => x === value).length;
+});
+
+this.global.define('uniqueBy', (arr, fn) => {
+    if (!Array.isArray(arr)) throw new RuntimeError('uniqueBy() expects an array', null, this.source);
+    const seen = new Set();
+    const result = [];
+    for (const item of arr) {
+        const key = fn ? fn(item) : item;
+        if (!seen.has(key)) {
+            seen.add(key);
+            result.push(item);
+        }
+    }
+    return result;
+});
+this.global.define('getProp', (obj, key, defaultValue = null) => {
+    if (!obj || typeof obj !== 'object') return defaultValue;
+    const keys = key.split('.');
+    let current = obj;
+    for (const k of keys) {
+        if (current[k] === undefined) return defaultValue;
+        current = current[k];
+    }
+    return current;
+});
+
+this.global.define('setProp', (obj, key, value) => {
+    if (!obj || typeof obj !== 'object') throw new RuntimeError('setProp() expects an object', null, this.source);
+    const keys = key.split('.');
+    let current = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+        if (!current[keys[i]] || typeof current[keys[i]] !== 'object') current[keys[i]] = {};
+        current = current[keys[i]];
+    }
+    current[keys[keys.length - 1]] = value;
+    return obj;
+});
+
+this.global.define('mergeDeep', (obj1, obj2) => {
+    const isObject = val => val && typeof val === 'object';
+    const result = {...obj1};
+    for (const key in obj2) {
+        if (isObject(obj2[key]) && isObject(result[key])) {
+            result[key] = this.global.get('mergeDeep')(result[key], obj2[key]);
+        } else {
+            result[key] = obj2[key];
+        }
+    }
+    return result;
+});
+this.global.define('camelCase', str => {
+    if (typeof str !== 'string') str = String(str);
+    return str
+        .replace(/[-_ ]+./g, s => s.charAt(s.length - 1).toUpperCase())
+        .replace(/^[A-Z]/, s => s.toLowerCase());
+});
+
+this.global.define('kebabCase', str => {
+    if (typeof str !== 'string') str = String(str);
+    return str
+        .replace(/([a-z])([A-Z])/g, '$1-$2')
+        .replace(/\s+/g, '-')
+        .replace(/_+/g, '-')
+        .toLowerCase();
+});
+
+this.global.define('repeatStr', (str, times) => {
+    if (typeof str !== 'string') str = String(str);
+    return str.repeat(Number(times) || 0);
+});
+this.global.define('randomInt', (min, max) => {
+    min = Number(min); max = Number(max);
+    if (isNaN(min) || isNaN(max)) return 0;
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+});
+
+this.global.define('lerp', (a, b, t) => {
+    a = Number(a); b = Number(b); t = Number(t);
+    return a + (b - a) * t;
+});
+
+this.global.define('degToRad', deg => Number(deg) * (Math.PI / 180));
+this.global.define('radToDeg', rad => Number(rad) * (180 / Math.PI));
+this.global.define('readJSON', path => {
+    const content = this.global.get('readFile')(path);
+    return JSON.parse(content);
+});
+
+this.global.define('writeJSON', (path, obj) => {
+    const content = JSON.stringify(obj, null, 2);
+    return this.global.get('writeFile')(path, content);
+});
+
+this.global.define('deleteFile', path => {
+    if (typeof path !== 'string') path = String(path);
+    if (!fs.existsSync(path)) return false;
+    fs.unlinkSync(path);
+    return true;
+});
+
+this.global.define('rmdir', path => {
+    if (typeof path !== 'string') path = String(path);
+    if (!fs.existsSync(path)) return false;
+    fs.rmSync(path, { recursive: true, force: true });
+    return true;
+});
+
+}
+
+async evaluate(node, env = this.global) {
+  switch (node.type) {
+    case 'Program': return await this.evalProgram(node, env);
+    case 'BlockStatement': return await this.evalBlock(node, new Environment(env));
+    case 'VarDeclaration': return await this.evalVarDeclaration(node, env);
+    case 'AssignmentExpression': return await this.evalAssignment(node, env);
+    case 'CompoundAssignment': return await this.evalCompoundAssignment(node, env);
+    case 'SldeployStatement': return await this.evalSldeploy(node, env);
+    case 'AskStatement': return await this.evalAsk(node, env);
+    case 'DefineStatement': return await this.evalDefine(node, env);
+    case 'FunctionExpression':
+  return this.evalFunctionExpression(node, env);
+case 'SliceExpression':
+  return await this.evalSlice(node, env);
+
+    case 'ExpressionStatement': return await this.evaluate(node.expression, env);
+    case 'BinaryExpression': return await this.evalBinary(node, env);
+    case 'LogicalExpression': return await this.evalLogical(node, env);
+    case 'UnaryExpression': return await this.evalUnary(node, env);
+    case 'ConditionalExpression':
+  return await this.evalConditional(node, env);
+    case 'Literal': return node.value;
+    case 'Identifier': return env.get(node.name, node, this.source);
+    case 'IfStatement': return await this.evalIf(node, env);
+    case 'WhileStatement': return await this.evalWhile(node, env);
+    case 'ForStatement':
+case 'ForInStatement':
+  return await this.evalFor(node, env);
+case 'DoTrackStatement':
+  return await this.evalDoTrack(node, env);
+case 'StartStatement':
+  return await this.evalStartStatement(node, env);
+
+case 'RaceClause':
+  return await this.evalRaceClause(node, env);
+
+    case 'BreakStatement': throw new BreakSignal();
+    case 'ContinueStatement': throw new ContinueSignal();
+    case 'ImportStatement': return await this.evalImport(node, env);
+    case 'FunctionDeclaration': return this.evalFunctionDeclaration(node, env);
+    case 'CallExpression': return await this.evalCall(node, env);
+    case 'ArrowFunctionExpression': return this.evalArrowFunction(node, env);
+    case 'ReturnStatement': {
+      const val = node.argument ? await this.evaluate(node.argument, env) : null;
+      throw new ReturnValue(val);
+    }
+   
+    case 'ArrayExpression':
+      return await Promise.all(node.elements.map(el => this.evaluate(el, env)));
+    case 'IndexExpression': return await this.evalIndex(node, env);
+    case 'ObjectExpression': return await this.evalObject(node, env);
+
+
+    case 'MemberExpression': return await this.evalMember(node, env);
+    case 'UpdateExpression': return await this.evalUpdate(node, env);
+    case 'AwaitExpression': {
+      const val = await this.evaluate(node.argument, env);
+      return val;
+    }
+    case 'NewExpression': {
+  const callee = await this.evaluate(node.callee, env);
+
+  if (typeof callee === 'object' && callee.body) {
+    const evaluator = this;
+
+    const Constructor = function (...args) {
+      const newEnv = new Environment(callee.env);
+      newEnv.define('this', this);
+
+      for (let i = 0; i < callee.params.length; i++) {
+        const param = callee.params[i];
+        const paramName = typeof param === 'string' ? param : param.name;
+        newEnv.define(paramName, args[i]);
+      }
+
+      return (async () => {
+        await evaluator.evaluate(callee.body, newEnv);
+        return this;
+      })();
+    };
+
+    const args = [];
+    for (const a of node.arguments) args.push(await this.evaluate(a, env));
+    return await new Constructor(...args);
+  }
+
+  // native JS constructor fallback
+  if (typeof callee !== 'function') {
+    throw new RuntimeError('NewExpression callee is not a function', node, this.source);
+  }
+
+  const args = [];
+  for (const a of node.arguments) args.push(await this.evaluate(a, env));
+  return new callee(...args);
+}
+
+    default:
+       throw new RuntimeError(`Unknown node type in evaluator: ${node.type}`, node, this.source);
+
+  }
+}
+
+async evalProgram(node, env) {
+  let result = null;
+  for (const stmt of node.body) {
+    try {
+      result = await this.evaluate(stmt, env);
+    } catch (e) {
+      // Re-throw known runtime control signals
+      if (e instanceof RuntimeError || e instanceof BreakSignal || e instanceof ContinueSignal || e instanceof ReturnValue) {
+        throw e;
+      }
+      // Wrap unexpected errors with RuntimeError including env for suggestions
+      throw new RuntimeError(
+        e.message || 'Error in program',
+        stmt,
+        this.source,
+        env
+      );
+    }
+  }
+  return result;
+}
+async evalSlice(node, env) {
+  try {
+    const arr = await this.evaluate(node.object, env);
+
+    if (!Array.isArray(arr)) {
+      throw new RuntimeError(
+        'Slice target must be an array',
+        node,
+        this.source,
+        env
+      );
+    }
+
+    let start = node.start ? await this.evaluate(node.start, env) : 0;
+    let end = node.end ? await this.evaluate(node.end, env) : arr.length;
+    let step = node.step ? await this.evaluate(node.step, env) : 1;
+
+    if (step === 0) {
+      throw new RuntimeError(
+        'Slice step cannot be zero',
+        node,
+        this.source,
+        env
+      );
+    }
+    start = start < 0 ? arr.length + start : start;
+    end = end < 0 ? arr.length + end : end;
+
+    start = Math.min(Math.max(start, 0), arr.length);
+    end = Math.min(Math.max(end, 0), arr.length);
+
+    const result = [];
+
+    if (step > 0) {
+      for (let i = start; i < end; i += step) {
+        result.push(arr[i]);
+      }
+    } else {
+      for (let i = start; i > end; i += step) {
+        result.push(arr[i]);
+      }
+    }
+
+    return result;
+
+  } catch (err) {
+    if (err instanceof RuntimeError) throw err;
+    throw new RuntimeError(
+      err.message || 'Error evaluating slice expression',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+
+async evalStartStatement(node, env) {
+  try {
+    const value = await this.evaluate(node.discriminant, env);
+    let executing = false;
+
+    for (const c of node.cases) {
+      try {
+        if (!executing) {
+          const testValue = await this.evaluate(c.test, env);
+          if (testValue === value) executing = true;
+        }
+
+        if (executing) {
+          await this.evaluate(c.consequent, new Environment(env));
+        }
+      } catch (caseErr) {
+        if (caseErr instanceof BreakSignal) break;
+        if (caseErr instanceof RuntimeError ||
+            caseErr instanceof ReturnValue ||
+            caseErr instanceof ContinueSignal) {
+          throw caseErr; // propagate signals
+        }
+        throw new RuntimeError(
+          caseErr.message || 'Error evaluating case in start statement',
+          c,
+          this.source,
+          env
+        );
+      }
+    }
+
+    return null;
+  } catch (err) {
+    if (err instanceof RuntimeError ||
+        err instanceof ReturnValue ||
+        err instanceof BreakSignal ||
+        err instanceof ContinueSignal) {
+      throw err;
+    }
+    throw new RuntimeError(
+      err.message || 'Error evaluating start statement',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+async evalConditional(node, env) {
+  try {
+    const test = await this.evaluate(node.test, env);
+    if (test) {
+      return await this.evaluate(node.consequent, env);
+    } else {
+      return await this.evaluate(node.alternate, env);
+    }
+  } catch (e) {
+    if (e instanceof RuntimeError) throw e;
+    throw new RuntimeError(
+      e.message || 'Error evaluating conditional expression',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+async evalRaceClause(node, env) {
+  try {
+    const testValue = await this.evaluate(node.test, env);
+    const result = await this.evaluate(node.consequent, new Environment(env));
+    return { testValue, result };
+  } catch (err) {
+    if (
+      err instanceof RuntimeError ||
+      err instanceof ReturnValue ||
+      err instanceof BreakSignal ||
+      err instanceof ContinueSignal
+    ) {
+      throw err; 
+    }
+    throw new RuntimeError(
+      err.message || 'Error evaluating race clause',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+async evalDoTrack(node, env) {
+  try {
+    return await this.evaluate(node.body, env);
+  } catch (err) {
+    if (!node.handler) {
+      if (err instanceof RuntimeError) throw err;
+      throw new RuntimeError(
+        err.message || 'Error in doTrack body',
+        node.body,
+        this.source,
+        env
+      );
+    }
+
+    const trackEnv = new Environment(env);
+    trackEnv.define('error', err);
+
+    try {
+      return await this.evaluate(node.handler, trackEnv);
+    } catch (handlerErr) {
+      if (handlerErr instanceof RuntimeError) throw handlerErr;
+      throw new RuntimeError(
+        handlerErr.message || 'Error in doTrack handler',
+        node.handler,
+        this.source,
+        trackEnv
+      );
+    }
+  }
+}
+
+async evalImport(node, env) {
+  const spec = node.path;
+  let lib;
+
+  try {
+    const resolved = require.resolve(spec, {
+      paths: [process.cwd()]
+    });
+    lib = require(resolved);
+  } catch (e) {
+    const fullPath = path.isAbsolute(spec)
+      ? spec
+      : path.join(process.cwd(), spec.endsWith('.sl') ? spec : spec + '.sl');
+
+    if (!fs.existsSync(fullPath)) {
+      throw new RuntimeError(
+        `Import not found: ${spec}`,
+        node,
+        this.source,
+        env
+      );
+    }
+
+    try {
+      const code = fs.readFileSync(fullPath, 'utf-8');
+      const tokens = new Lexer(code).getTokens();
+      const ast = new Parser(tokens).parse();
+
+      const moduleEnv = new Environment(env);
+      await this.evaluate(ast, moduleEnv);
+
+      lib = {};
+      for (const key of Object.keys(moduleEnv.store)) {
+        lib[key] = moduleEnv.store[key];
+      }
+
+      lib.default = lib;
+    } catch (parseErr) {
+      throw new RuntimeError(
+        parseErr.message || `Failed to import module: ${spec}`,
+        node,
+        this.source,
+        env
+      );
+    }
+  }
+
+  for (const imp of node.specifiers) {
+    if (imp.type === 'DefaultImport') {
+      env.define(imp.local, lib.default ?? lib);
+    } else if (imp.type === 'NamespaceImport') {
+      env.define(imp.local, lib);
+    } else if (imp.type === 'NamedImport') {
+      if (!(imp.imported in lib)) {
+        throw new RuntimeError(
+          `Module '${spec}' has no export '${imp.imported}'`,
+          node,
+          this.source,
+          env
+        );
+      }
+      env.define(imp.local, lib[imp.imported]);
+    }
+  }
+
+  return null;
+}
+async evalBlock(node, env) {
+  let result = null;
+  for (const stmt of node.body) {
+    try {
+      result = await this.evaluate(stmt, env);
+    } catch (e) {
+      if (
+        e instanceof RuntimeError ||
+        e instanceof ReturnValue ||
+        e instanceof BreakSignal ||
+        e instanceof ContinueSignal
+      ) {
+        throw e; 
+      }
+
+      throw new RuntimeError(
+        e.message || 'Error in block',
+        stmt,
+        this.source,
+        env // pass env for suggestions
+      );
+    }
+  }
+  return result;
+}
+
+async evalVarDeclaration(node, env) {
+  if (!node.expr) {
+    throw new RuntimeError(
+      'Variable declaration requires an initializer',
+      node,
+      this.source,
+      env // pass env for suggestions
+    );
+  }
+
+  try {
+    const val = await this.evaluate(node.expr, env);
+    return env.define(node.id, val);
+  } catch (e) {
+    if (e instanceof RuntimeError) throw e;
+    throw new RuntimeError(
+      e.message || 'Error evaluating variable declaration',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+evalArrowFunction(node, env) {
+  if (!node.body) {
+    throw new RuntimeError(
+      'Arrow function missing body',
+      node,
+      this.source,
+      env
+    );
+  }
+
+  if (!Array.isArray(node.params)) {
+    throw new RuntimeError(
+      'Invalid arrow function parameters',
+      node,
+      this.source,
+      env
+    );
+  }
+
+  const evaluator = this;
+
+  return async function (...args) {
+    const localEnv = new Environment(env);
+
+    node.params.forEach((p, i) => {
+      const paramName = typeof p === 'string' ? p : p.name;
+      localEnv.define(paramName, args[i]);
+    });
+
+    try {
+      if (node.isBlock) {
+        const result = await evaluator.evaluate(node.body, localEnv);
+        return result === undefined ? null : result; 
+      } else {
+        const result = await evaluator.evaluate(node.body, localEnv);
+        return result === undefined ? null : result; 
+      }
+    } catch (err) {
+      if (err instanceof ReturnValue) return err.value === undefined ? null : err.value;
+      if (err instanceof RuntimeError) throw err; // preserve RuntimeErrors
+      throw new RuntimeError(
+        err.message || 'Error evaluating arrow function',
+        node,
+        evaluator.source,
+        localEnv
+      );
+    }
+  };
+}
+
+async evalAssignment(node, env) {
+  const rightVal = await this.evaluate(node.right, env);
+  const left = node.left;
+
+  try {
+    if (left.type === 'Identifier') return env.set(left.name, rightVal);
+
+    if (left.type === 'MemberExpression') {
+      const obj = await this.evaluate(left.object, env);
+      if (obj == null) throw new RuntimeError(
+        'Cannot assign to null or undefined',
+        node,
+        this.source,
+        env
+      );
+      obj[left.property] = rightVal; // dynamic creation allowed
+      return rightVal;
+    }
+
+    if (left.type === 'IndexExpression') {
+      const obj = await this.evaluate(left.object, env);
+      const idx = await this.evaluate(left.indexer, env);
+      if (obj == null) throw new RuntimeError(
+        'Cannot assign to null or undefined',
+        node,
+        this.source,
+        env
+      );
+      obj[idx] = rightVal; // dynamic creation allowed
+      return rightVal;
+    }
+
+    throw new RuntimeError(
+      'Invalid assignment target',
+      node,
+      this.source,
+      env
+    );
+
+  } catch (e) {
+    if (e instanceof RuntimeError) throw e;
+    throw new RuntimeError(
+      e.message || 'Error in assignment',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+async evalCompoundAssignment(node, env) {
+  const left = node.left;
+  let current;
+
+  try {
+    if (left.type === 'Identifier') current = env.get(left.name, left, this.source);
+    else if (left.type === 'MemberExpression') current = await this.evalMember(left, env) ?? 0;
+    else if (left.type === 'IndexExpression') current = await this.evalIndex(left, env) ?? 0;
+    else throw new RuntimeError(
+      'Invalid compound assignment target',
+      node,
+      this.source,
+      env
+    );
+
+    const rhs = await this.evaluate(node.right, env);
+    let computed;
+
+    switch (node.operator) {
+      case 'PLUSEQ': computed = current + rhs; break;
+      case 'MINUSEQ': computed = current - rhs; break;
+      case 'STAREQ': computed = current * rhs; break;
+      case 'SLASHEQ': computed = current / rhs; break;
+      case 'MODEQ': computed = current % rhs; break;
+      default: throw new RuntimeError(
+        `Unknown compound operator: ${node.operator}`,
+        node,
+        this.source,
+        env
+      );
+    }
+
+    if (left.type === 'Identifier') env.set(left.name, computed);
+    else if (left.type === 'MemberExpression' || left.type === 'IndexExpression') {
+      await this.evalAssignment(
+        { left, right: { type: 'Literal', value: computed }, type: 'AssignmentExpression' },
+        env
+      );
+    }
+
+    return computed;
+
+  } catch (e) {
+    if (e instanceof RuntimeError) throw e;
+    throw new RuntimeError(
+      e.message || 'Error in compound assignment',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+async evalSldeploy(node, env) {
+  const val = await this.evaluate(node.expr, env);
+  console.log(this.formatValue(val));
+  return val;
+}
+
+
+async evalAsk(node, env) {
+  try {
+    const prompt = await this.evaluate(node.prompt, env);
+
+    if (typeof prompt !== 'string') {
+      throw new RuntimeError('ask() prompt must be a string', node, this.source, env);
+    }
+
+    const input = readlineSync.question(prompt + ' ');
+    return input;
+
+  } catch (e) {
+    if (e instanceof RuntimeError) throw e;
+    throw new RuntimeError(
+      e.message || 'Error evaluating ask()',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+async evalDefine(node, env) {
+  try {
+    if (!node.id || typeof node.id !== 'string') {
+      throw new RuntimeError('Invalid identifier in define statement', node, this.source, env);
+    }
+
+    const val = node.expr ? await this.evaluate(node.expr, env) : null;
+    return env.define(node.id, val);
+
+  } catch (e) {
+    if (e instanceof RuntimeError) throw e;
+    throw new RuntimeError(
+      e.message || 'Error in define statement',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+async evalBinary(node, env) {
+  try {
+    const l = await this.evaluate(node.left, env);
+    const r = await this.evaluate(node.right, env);
+
+    if (node.operator === 'SLASH' && r === 0) {
+      throw new RuntimeError('Division by zero', node, this.source, env);
+    }
+
+    switch (node.operator) {
+      case 'PLUS': {
+        if (Array.isArray(l) && Array.isArray(r)) return l.concat(r);
+        if (typeof l === 'string' || typeof r === 'string') return String(l) + String(r);
+        if (typeof l === 'number' && typeof r === 'number') return l + r;
+        if (typeof l === 'object' && typeof r === 'object') return { ...l, ...r };
+
+        throw new RuntimeError(
+          `Unsupported operands for +: ${typeof l} and ${typeof r}`,
+          node,
+          this.source,
+          env
+        );
+      }
+      case 'MINUS': return l - r;
+      case 'STAR': return l * r;
+      case 'SLASH': return l / r;
+      case 'MOD': return l % r;
+      case 'EQEQ': return l === r;
+      case 'NOTEQ': return l !== r;
+      case 'LT': return l < r;
+      case 'LTE': return l <= r;
+      case 'GT': return l > r;
+      case 'GTE': return l >= r;
+      default:
+        throw new RuntimeError(
+          `Unknown binary operator: ${node.operator}`,
+          node,
+          this.source,
+          env
+        );
+    }
+
+  } catch (e) {
+    if (e instanceof RuntimeError) throw e;
+    throw new RuntimeError(
+      e.message || 'Error evaluating binary expression',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+async evalLogical(node, env) {
+  try {
+    const l = await this.evaluate(node.left, env);
+
+    switch (node.operator) {
+      case 'AND': return l && await this.evaluate(node.right, env);
+      case 'OR': return l || await this.evaluate(node.right, env);
+      case '??': {
+        const r = await this.evaluate(node.right, env);
+        return (l !== null && l !== undefined) ? l : r;
+      }
+      default:
+        throw new RuntimeError(
+          `Unknown logical operator: ${node.operator}`,
+          node,
+          this.source,
+          env
+        );
+    }
+
+  } catch (e) {
+    if (e instanceof RuntimeError) throw e;
+    throw new RuntimeError(
+      e.message || 'Error evaluating logical expression',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+async evalUnary(node, env) {
+  try {
+    // Handle prefix update operators
+    if (node.type === 'UpdateExpression' && node.prefix) {
+      if (node.argument.type !== 'Identifier') {
+        throw new RuntimeError(
+          `Invalid operand for update operator: ${node.operator}`,
+          node,
+          this.source,
+          env
+        );
+      }
+
+      const varName = node.argument.name;
+      let currentVal = await env.get(varName); // assuming env.get returns the variable value
+
+      switch (node.operator) {
+        case 'PLUSPLUS':
+          currentVal++;
+          await env.set(varName, currentVal);
+          return currentVal;
+        case 'MINUSMINUS':
+          currentVal--;
+          await env.set(varName, currentVal);
+          return currentVal;
+        default:
+          throw new RuntimeError(
+            `Unknown update operator: ${node.operator}`,
+            node,
+            this.source,
+            env
+          );
+      }
+    }
+
+    // Evaluate the argument first
+    const val = await this.evaluate(node.argument, env);
+
+    switch (node.operator) {
+      case 'NOT':
+        return !val;
+      case 'MINUS':
+        return -val;
+      case 'PLUS':
+        return +val;
+      default:
+        throw new RuntimeError(
+          `Unknown unary operator: ${node.operator}`,
+          node,
+          this.source,
+          env
+        );
+    }
+  } catch (e) {
+    if (e instanceof RuntimeError) throw e;
+    throw new RuntimeError(
+      e.message || 'Error evaluating unary expression',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+// Handle postfix updates (x++ or x--)
+async evalPostfixUpdate(node, env) {
+  if (node.type !== 'UpdateExpression' || node.prefix) {
+    throw new RuntimeError(
+      `Invalid postfix update node`,
+      node,
+      this.source,
+      env
+    );
+  }
+
+  if (node.argument.type !== 'Identifier') {
+    throw new RuntimeError(
+      `Invalid operand for postfix update operator: ${node.operator}`,
+      node,
+      this.source,
+      env
+    );
+  }
+
+  const varName = node.argument.name;
+  let currentVal = await env.get(varName);
+
+  let returnVal = currentVal;
+
+  switch (node.operator) {
+    case 'PLUSPLUS':
+      currentVal++;
+      await env.set(varName, currentVal);
+      return returnVal; // return original value
+    case 'MINUSMINUS':
+      currentVal--;
+      await env.set(varName, currentVal);
+      return returnVal; // return original value
+    default:
+      throw new RuntimeError(
+        `Unknown postfix operator: ${node.operator}`,
+        node,
+        this.source,
+        env
+      );
+  }
+}
+
+
+async evalIf(node, env) {
+  let test = await this.evaluate(node.test, env);
+  test = !!test; // coerce to boolean
+
+  if (test) {
+    return await this.evaluate(node.consequent, env);
+  }
+
+  if (node.alternate) {
+    return await this.evaluate(node.alternate, env);
+  }
+
+  return null;
+}
+
+async evalWhile(node, env) {
+  try {
+    while (true) {
+      let test = await this.evaluate(node.test, env);
+      test = !!test;
+
+      if (!test) break;
+
+      try {
+        await this.evaluate(node.body, env);
+      } catch (e) {
+        if (e instanceof BreakSignal) break;
+        if (e instanceof ContinueSignal) continue;
+        throw e;
+      }
+    }
+
+    return null;
+
+  } catch (e) {
+    if (e instanceof RuntimeError || e instanceof BreakSignal || e instanceof ContinueSignal) throw e;
+    throw new RuntimeError(
+      e.message || 'Error evaluating while loop',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+async evalFor(node, env) {
+  try {
+    // ForInStatement
+    if (node.type === 'ForInStatement') {
+      const iterable = await this.evaluate(node.iterable, env);
+
+      if (iterable == null || typeof iterable !== 'object') {
+        throw new RuntimeError(
+          'Cannot iterate over non-iterable',
+          node,
+          this.source,
+          env
+        );
+      }
+
+      const loopVar = node.variable; // string name of the loop variable
+      const createLoopEnv = () => node.letKeyword ? new Environment(env) : env;
+
+      if (Array.isArray(iterable)) {
+        for (const value of iterable) {
+          const loopEnv = createLoopEnv();
+          loopEnv.define(loopVar, value);
+
+          try {
+            await this.evaluate(node.body, loopEnv);
+          } catch (e) {
+            if (e instanceof BreakSignal) break;
+            if (e instanceof ContinueSignal) continue;
+            throw e;
+          }
+        }
+      } else {
+        for (const key of Object.keys(iterable)) {
+          const loopEnv = createLoopEnv();
+          loopEnv.define(loopVar, key);
+
+          try {
+            await this.evaluate(node.body, loopEnv);
+          } catch (e) {
+            if (e instanceof BreakSignal) break;
+            if (e instanceof ContinueSignal) continue;
+            throw e;
+          }
+        }
+      }
+
+      return null;
+    }
+
+    // Standard for loop
+    const local = new Environment(env);
+
+    if (node.init) await this.evaluate(node.init, local);
+
+    while (!node.test || await this.evaluate(node.test, local)) {
+      try {
+        await this.evaluate(node.body, local);
+      } catch (e) {
+        if (e instanceof BreakSignal) break;
+        if (e instanceof ContinueSignal) {
+          if (node.update) await this.evaluate(node.update, local);
+          continue;
+        }
+        throw e;
+      }
+
+      if (node.update) await this.evaluate(node.update, local);
+    }
+
+    return null;
+
+  } catch (err) {
+    if (err instanceof RuntimeError || err instanceof BreakSignal || err instanceof ContinueSignal) throw err;
+    throw new RuntimeError(
+      err.message || 'Error evaluating for loop',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+evalFunctionExpression(node, env) {
+  if (!node.body || !Array.isArray(node.params)) {
+    throw new RuntimeError(
+      'Invalid function expression',
+      node,
+      this.source,
+      env
+    );
+  }
+
+  const evaluator = this;
+
+  const fn = async function (...args) {
+    const localEnv = new Environment(env);
+
+    for (let i = 0; i < node.params.length; i++) {
+      const param = node.params[i];
+      const paramName = typeof param === 'string' ? param : param.name;
+      localEnv.define(paramName, args[i]);
+    }
+
+    try {
+      const result = await evaluator.evaluate(node.body, localEnv);
+      return result === undefined ? null : result;
+    } catch (e) {
+      if (e instanceof ReturnValue) return e.value === undefined ? null : e.value;
+      throw e;
+    }
+  };
+  fn.params = node.params;
+  fn.body = node.body;
+  fn.env = env;
+
+  return fn;
+}
+
+evalFunctionDeclaration(node, env) {
+  try {
+    if (!node.name || typeof node.name !== 'string') {
+      throw new RuntimeError('Function declaration requires a valid name', node, this.source, env);
+    }
+
+    if (!Array.isArray(node.params)) {
+      throw new RuntimeError(`Invalid parameter list in function '${node.name}'`, node, this.source, env);
+    }
+
+    if (!node.body) {
+      throw new RuntimeError(`Function '${node.name}' has no body`, node, this.source, env);
+    }
+
+    const fn = {
+      params: node.params,
+      body: node.body,
+      env,
+      async: node.async || false
+    };
+
+    env.define(node.name, fn);
+    return null;
+
+  } catch (err) {
+    if (err instanceof RuntimeError) throw err;
+    throw new RuntimeError(
+      err.message || 'Error defining function',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+async evalCall(node, env) {
+  try {
+    const calleeEvaluated = await this.evaluate(node.callee, env);
+
+    // Native JS function
+    if (typeof calleeEvaluated === 'function') {
+      const args = [];
+      for (const a of node.arguments) args.push(await this.evaluate(a, env));
+      return await calleeEvaluated(...args);
+    }
+
+    // Not a callable object
+    if (!calleeEvaluated || typeof calleeEvaluated !== 'object' || !calleeEvaluated.body) {
+      throw new RuntimeError(
+        'Call to non-function',
+        node,
+        this.source,
+        env
+      );
+    }
+
+    const fn = calleeEvaluated;
+    const callEnv = new Environment(fn.env);
+
+    for (let i = 0; i < fn.params.length; i++) {
+      const argVal = node.arguments[i]
+        ? await this.evaluate(node.arguments[i], env)
+        : null;
+
+      const param = fn.params[i];
+      const paramName = typeof param === 'string' ? param : param.name;
+      callEnv.define(paramName, argVal);
+    }
+
+    try {
+      const result = await this.evaluate(fn.body, callEnv);
+      return result === undefined ? null : result; // enforce null instead of undefined
+    } catch (e) {
+      if (e instanceof ReturnValue) return e.value === undefined ? null : e.value;
+      throw e;
+    }
+
+  } catch (err) {
+    if (err instanceof RuntimeError) throw err;
+    throw new RuntimeError(
+      err.message || 'Error during function call',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+async evalIndex(node, env) {
+  try {
+    const obj = await this.evaluate(node.object, env);
+    const idx = await this.evaluate(node.indexer, env);
+
+    if (obj == null) {
+      throw new RuntimeError(
+        'Cannot index null or undefined',
+        node,
+        this.source,
+        env
+      );
+    }
+
+    if (Array.isArray(obj)) {
+      if (idx < 0 || idx >= obj.length) return undefined;
+      return obj[idx];
+    }
+
+    if (typeof obj === 'object') return obj[idx]; // undefined if missing
+
+    return undefined;
+  } catch (err) {
+    if (err instanceof RuntimeError) throw err;
+    throw new RuntimeError(
+      err.message || 'Error during index access',
+      node,
+      this.source,
+      env
+    );
+  }
+} 
+
+async evalObject(node, env) {
+  try {
+    const out = {};
+    for (const p of node.props) {
+      if (!p.key) {
+        throw new RuntimeError(
+          'Object property must have a key',
+          node,
+          this.source,
+          env
+        );
+      }
+
+      const key = await this.evaluate(p.key, env);
+      let value = null;
+
+      if (p.value) {
+        value = await this.evaluate(p.value, env);
+        if (value === undefined) value = null; // force null instead of undefined
+      }
+
+      out[key] = value;
+    }
+    return out;
+  } catch (err) {
+    if (err instanceof RuntimeError) throw err;
+    throw new RuntimeError(
+      err.message || 'Error evaluating object literal',
+      node,
+      this.source,
+      env
+    );
+  }
+}
+
+
+async evalMember(node, env) {
+  const obj = await this.evaluate(node.object, env);
+
+  if (obj == null) {
+    throw new RuntimeError('Member access of null or undefined', node, this.source);
+  }
+
+  const prop = obj[node.property];
+
+  if (typeof prop === 'function') {
+    return prop.bind(obj);
+  }
+
+  return prop;
+}
+
+async evalUpdate(node, env) {
+  const arg = node.argument;
+
+  const getCurrent = async () => {
+    try {
+      if (arg.type === 'Identifier') return env.get(arg.name, arg, this.source);
+      if (arg.type === 'MemberExpression') return await this.evalMember(arg, env);
+      if (arg.type === 'IndexExpression') return await this.evalIndex(arg, env);
+      throw new RuntimeError('Invalid update target', node, this.source, env);
+    } catch (err) {
+      if (err instanceof RuntimeError) throw err;
+      throw new RuntimeError(
+        err.message || 'Error accessing update target',
+        node,
+        this.source,
+        env
+      );
+    }
+  };
+
+  const setValue = async (v) => {
+    try {
+      if (arg.type === 'Identifier') {
+        env.set(arg.name, v);
+      } else if (arg.type === 'MemberExpression') {
+        const obj = await this.evaluate(arg.object, env);
+        if (obj == null) throw new RuntimeError('Cannot update property of null or undefined', node, this.source, env);
+        obj[arg.property] = v;
+      } else if (arg.type === 'IndexExpression') {
+        const obj = await this.evaluate(arg.object, env);
+        const idx = await this.evaluate(arg.indexer, env);
+        if (obj == null) throw new RuntimeError('Cannot update index of null or undefined', node, this.source, env);
+        obj[idx] = v;
+      }
+    } catch (err) {
+      if (err instanceof RuntimeError) throw err;
+      throw new RuntimeError(
+        err.message || 'Error setting update target',
+        node,
+        this.source,
+        env
+      );
+    }
+  };
+
+  const current = await getCurrent();
+  const newVal = node.operator === 'PLUSPLUS' ? current + 1 : current - 1;
+
+  if (node.prefix) {
+    await setValue(newVal);
+    return newVal;
+  } else {
+    await setValue(newVal);
+    return current;
+  }
+}
+
+}
+
+module.exports = Evaluator;    
+    </code></pre>
+  </div>
+ 
+  <div class="file">
+    <div class="file-header">
+      starlight.js
+      <button onclick="copyCode('starlight')">Copy</button>
+    </div>
+    <pre><code id="starlight" class="placeholder">
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { exec } = require('child_process');
+const readline = require('readline');
+const readlineSync = require('readline-sync');
+const MarkdownIt = require('markdown-it');
+const mdTaskLists = require('markdown-it-task-lists');
+const mdFootnote = require('markdown-it-footnote');
+
+const Lexer = require('./lexer');
+const Parser = require('./parser');
+const Evaluator = require('./evaluator');
+
+const VERSION = '1.1.19';
+
+const COLOR = {
+    reset: '\x1b[0m',
+    bold: '\x1b[1m',
+    red: '\x1b[31m',
+    yellow: '\x1b[33m',
+    blue: '\x1b[34m',
+    cyan: '\x1b[36m',
+    gray: '\x1b[90m',
+    green: '\x1b[32m',
+    magenta: '\x1b[35m',
+    white: '\x1b[37m'
+};
+
+function waitAndExit(code = 0) {
+    try { process.stdin.setRawMode(true); } catch {}
+    console.error(COLOR.gray + '\nPress any key to exit...' + COLOR.reset);
+    process.stdin.resume();
+    process.stdin.once('data', () => process.exit(code));
+}
+
+function fatal(msg) {
+    console.error(COLOR.white + msg + COLOR.reset);
+    waitAndExit(1);
+}
+function renderMarkdown(mdPath) {
+    let markdown;
+    try {
+        markdown = fs.readFileSync(mdPath, 'utf8');
+    } catch (e) {
+        console.error(COLOR.white + `Failed to read markdown: ${e.message}` + COLOR.reset);
+        return waitAndExit(1);
+    }
+
+    const md = new MarkdownIt({
+        html: true,
+        linkify: true,
+        typographer: true
+    })
+        .use(mdTaskLists, { enabled: true })
+        .use(mdFootnote);
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${path.basename(mdPath)}</title>
+<style>
+    body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        padding: 40px;
+        max-width: 900px;
+        margin: auto;
+        background: #0e0e11;
+        color: #eaeaea;
+        line-height: 1.6;
+    }
+    h1, h2, h3, h4 {
+        border-bottom: 1px solid #2a2a35;
+        padding-bottom: 6px;
+    }
+    pre {
+        background: #1e1e2e;
+        padding: 16px;
+        overflow-x: auto;
+        border-radius: 8px;
+    }
+    code {
+        background: #1e1e2e;
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: #f8f8f2;
+    }
+    table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 20px 0;
+    }
+    th, td {
+        border: 1px solid #2a2a35;
+        padding: 8px;
+    }
+    th {
+        background: #1b1b25;
+    }
+    a {
+        color: #7aa2f7;
+        text-decoration: none;
+    }
+    a:hover {
+        text-decoration: underline;
+    }
+    blockquote {
+        border-left: 4px solid #7aa2f7;
+        padding-left: 16px;
+        color: #c0caf5;
+        margin: 20px 0;
+    }
+</style>
+</head>
+<body>
+${md.render(markdown)}
+</body>
+</html>`;
+
+    const tempHtml = path.join(
+        os.tmpdir(),
+        `starlight-md-${Date.now()}.html`
+    );
+
+    fs.writeFileSync(tempHtml, html, 'utf8');
+
+    openURL(`file://${tempHtml}`);
+
+    setTimeout(() => {
+        try { fs.unlinkSync(tempHtml); } catch {}
+    }, 3000);
+}
+
+function highlightCode(line) {
+    return line
+        .replace(/"(?:\\.|[^"])*"/g, m => COLOR.yellow + m + COLOR.reset)
+        .replace(/\b\d+(\.\d+)?\b/g, m => COLOR.magenta + m + COLOR.reset)
+        .replace(
+            /\b(sldeploy|import|from|let|if|else|for|while|func|return|break|continue|define|ask)\b/g,
+            m => COLOR.blue + m + COLOR.reset
+        );
+}
+
+function openURL(url) {
+    const platform = process.platform;
+    let command;
+
+    if (platform === 'win32') command = `start "" "${url}"`;
+    else if (platform === 'darwin') command = `open "${url}"`;
+    else command = `xdg-open "${url}"`;
+
+    exec(command);
+}
+
+const args = process.argv.slice(2);
+
+if (args.length === 0) {
+    console.log(`
+${COLOR.bold}Starlight Programming Language${COLOR.reset}
+${COLOR.magenta}Developed by Macedon${COLOR.reset}
+
+Usage:
+  starlight <file.sl>        Run a Starlight file
+  starlight -v              Show version
+  starlight --help          Show help
+  starlight --learn         Open learning guide
+  starlight --writedirectly Interactive editor
+`);
+    process.exit(0);
+}
+
+if (args[0] === '-v' || args[0] === '--version') {
+    console.log(`${COLOR.bold}Starlight CLI v${VERSION}${COLOR.reset}`);
+    console.log(`${COLOR.magenta}Developed by Dominex Macedon${COLOR.reset}`);
+    process.exit(0);
+}
+
+if (args[0] === '--help') {
+    console.log(`
+${COLOR.bold}Starlight CLI v${VERSION}${COLOR.reset}
+${COLOR.magenta}Developed by Macedon${COLOR.reset}
+
+Commands:
+  ${COLOR.green}starlight <file.sl>${COLOR.reset}
+      Run a Starlight source file
+
+  ${COLOR.green}starlight -v${COLOR.reset}
+      Show CLI version
+
+  ${COLOR.green}starlight --help${COLOR.reset}
+      Show this help message
+
+  ${COLOR.green}starlight --learn${COLOR.reset}
+      Open the official learning guide
+
+  ${COLOR.green}starlight --writedirectly${COLOR.reset}
+      Interactive editor mode
+`);
+    process.exit(0);
+}
+
+if (args[0] === '--learn') {
+    openURL('https://programming-lang.pages.dev/learning-guide');
+    process.exit(0);
+}
+
+if (args[0] === '--writedirectly') {
+    const tempFile = path.join(os.tmpdir(), `starlight-${Date.now()}.sl`);
+    const lines = [];
+
+    console.log(COLOR.green + 'Interactive Starlight Editor' + COLOR.reset);
+    console.log(COLOR.gray + 'Type code. Use :run to execute.\n' + COLOR.reset);
+
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+        terminal: false
+    });
+
+    process.stdout.write(COLOR.cyan + '> ' + COLOR.reset);
+
+    rl.on('line', (line) => {
+        if (line.trim() === ':run') {
+            rl.close();
+            fs.writeFileSync(tempFile, lines.join('\n'), 'utf8');
+            runFile(tempFile, true, () => savePrompt(lines));
+            return;
+        }
+
+        lines.push(line);
+        process.stdout.write(
+            COLOR.cyan + '> ' + COLOR.reset + highlightCode(line) + '\n'
+        );
+    });
+
+    return;
+}
+
+function savePrompt(lines) {
+    try { process.stdin.setRawMode(false); } catch {}
+
+    const save = readlineSync
+        .question(COLOR.cyan + 'Do you want to save this code? (y/n): ' + COLOR.reset)
+        .trim()
+        .toLowerCase();
+
+    if (save !== 'y') return waitAndExit(0);
+
+    const dir = readlineSync.question(
+        COLOR.cyan + 'Folder path: ' + COLOR.reset
+    ).trim();
+
+    if (!fs.existsSync(dir)) {
+        console.log(COLOR.yellow + 'Invalid folder.' + COLOR.reset);
+        return waitAndExit(0);
+    }
+
+    const name = readlineSync.question(
+        COLOR.cyan + 'File name: ' + COLOR.reset
+    ).trim();
+
+    if (!name) return waitAndExit(0);
+
+    const file = path.join(dir, name.endsWith('.sl') ? name : name + '.sl');
+    fs.writeFileSync(file, lines.join('\n'), 'utf8');
+
+    console.log(COLOR.green + `Saved to ${file}` + COLOR.reset);
+    waitAndExit(0);
+}
+
+async function runFile(filePath, isTemp = false, callback) {
+    let code;
+    try {
+        code = fs.readFileSync(filePath, 'utf8');
+    } catch (e) {
+        console.error(COLOR.white + `Failed to read file: ${e.message}` + COLOR.reset);
+        return waitAndExit(1);
+    }
+
+    let tokens, ast;
+    try {
+        const lexer = new Lexer(code);
+        tokens = lexer.getTokens();
+
+        const parser = new Parser(tokens, code);
+        ast = parser.parse();  // <-- parser errors caught here
+    } catch (e) {
+        console.error(COLOR.white + ` ${e.message}` + COLOR.reset);
+        return waitAndExit(1); // stop execution without Node.js stack trace
+    }
+
+    const evaluator = new Evaluator(code);
+
+    try {
+        await evaluator.evaluate(ast);
+    } catch (e) {
+        if (e.name === 'RuntimeError' || e.name === 'SyntaxError') {
+            console.error(COLOR.white + e.message + COLOR.reset);
+        } else {
+            console.error(COLOR.white + `Unexpected Error: ${e.message || e}` + COLOR.reset);
+        }
+        return waitAndExit(1);
+    }
+
+    if (callback) callback();
+
+    if (isTemp) {
+        try { fs.unlinkSync(filePath); } catch {}
+    }
+}
+if (!args[0].startsWith('--')) {
+    const file = path.resolve(args[0]);
+    const ext = path.extname(file).toLowerCase();
+
+    if (ext === '.md') {
+        renderMarkdown(file);
+    } else if (ext === '.sl') {
+        runFile(file);
+    } else {
+        console.error(COLOR.red + 'Incorrect file extension. Create .sl or .md to be able to run correctly.' + COLOR.reset);
+        waitAndExit(1);
+    }
+}
+
+
+    </code></pre>
+  </div>
+
+</div>
+
+<script>
+function copyCode(id) {
+  const text = document.getElementById(id).innerText;
+  navigator.clipboard.writeText(text);
+  alert("Copied!");
+}
+</script>
+
+</body>
+</html>
